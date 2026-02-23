@@ -1,0 +1,8 @@
+# Development dependencies for Hybrid Cloud Controller
+# Compile with: uv pip-compile requirements-development.piptools -o requirements-development.txt
+
+-c requirements.txt
+
+pytest>=8.0.0
+ruff>=0.2.0
+hypothesis>=6.98.0

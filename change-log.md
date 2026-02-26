@@ -196,3 +196,28 @@ Implemented pricing scheduler that automatically fetches AWS pricing data every 
 ### Requirements Validated
 - 3.2: Execute pricing data retrieval once every 24 hours
 - 3.5: Use most recent cached pricing data when API unavailable and log warning
+
+## 2024-01-XX - Conversation Manager Implementation
+
+### Description
+Implemented conversation manager for Q&A service that maintains conversation history per session. Stores messages with role (user/assistant), content, and timestamp in the database. Provides functions to add messages, retrieve conversation history in chronological order, and clear history for a session.
+
+### Files Created
+- `packages/qa_service/context.py` - Conversation manager functions (add_message, get_history, clear_history)
+- `tests/unit/test_conversation_manager.py` - Comprehensive unit tests for conversation manager (15 tests)
+
+### Files Modified
+- `packages/qa_service/__init__.py` - Added conversation manager function exports
+
+### Key Features
+- Add messages to conversation history with role validation (user/assistant only)
+- Store messages with unique ID, session ID, configuration ID, role, content, and timestamp
+- Retrieve conversation history in chronological order (sorted by timestamp)
+- Return history as list of dictionaries with id, role, content, and ISO format timestamp
+- Clear all messages for a specific session
+- Session isolation - history is maintained separately per session
+- Async function signatures for future async database support
+
+### Requirements Validated
+- 4.5: Display Q&A responses in conversational format (via history retrieval)
+- 4.6: Maintain conversation history for the current user session

@@ -10,10 +10,18 @@ from packages.qa_service.processor import (
     compare_aspects,
     generate_recommendation,
 )
+from packages.qa_service.context import (
+    add_message,
+    get_history,
+    clear_history,
+)
 
 __all__ = [
     "process_question",
     "get_cost_item_explanation",
     "compare_aspects",
     "generate_recommendation",
+    "add_message",
+    "get_history",
+    "clear_history",
 ]

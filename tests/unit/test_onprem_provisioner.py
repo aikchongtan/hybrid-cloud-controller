@@ -1187,3 +1187,346 @@ class TestCaaSIntegration:
             assert conn_info["port"]
             assert conn_info["container_id"]
             assert conn_info["image_url"] == "nginx:latest"
+
+
+class TestConfigureNetworking:
+    """Tests for configure_networking function."""
+
+    def test_configure_networking_mock_mode_default(self, provision_id, db_session):
+        """Test that configure_networking defaults to mock mode."""
+        network_config = onprem_provisioner.configure_networking(
+            provision_id=provision_id,
+            db_session=db_session,
+        )
+
+        # Verify network configuration
+        assert network_config.network_id
+        assert network_config.network_name.startswith("mock-network-")
+        assert network_config.subnet == "10.0.0.0/24"
+        assert network_config.gateway == "10.0.0.1"
+        assert network_config.dns_servers == ["8.8.8.8", "8.8.4.4"]
+        assert network_config.status == "active"
+
+        # Verify database tracking
+        resources = db_session.query(models.ResourceModel).filter_by(resource_type="network").all()
+        assert len(resources) == 1
+
+        resource = resources[0]
+        assert resource.provision_id == provision_id
+        assert resource.resource_type == "network"
+        assert resource.status == "active"
+
+        # Verify connection info
+        conn_info = json.loads(resource.connection_info_json)
+        assert conn_info["network_id"] == network_config.network_id
+        assert conn_info["network_name"] == network_config.network_name
+        assert conn_info["subnet"] == "10.0.0.0/24"
+        assert conn_info["gateway"] == "10.0.0.1"
+        assert conn_info["dns_servers"] == "8.8.8.8,8.8.4.4"
+
+    def test_configure_networking_custom_subnet(self, provision_id, db_session):
+        """Test configure_networking with custom subnet."""
+        network_config = onprem_provisioner.configure_networking(
+            provision_id=provision_id,
+            db_session=db_session,
+            subnet="192.168.1.0/24",
+        )
+
+        # Verify network configuration with custom subnet
+        assert network_config.subnet == "192.168.1.0/24"
+        assert network_config.gateway == "192.168.1.1"
+        assert network_config.status == "active"
+
+    def test_configure_networking_libvirt_unavailable(self, provision_id, db_session):
+        """Test that configure_networking raises error when libvirt is requested but unavailable."""
+        # Only test if libvirt is not available
+        if not onprem_provisioner.LIBVIRT_AVAILABLE:
+            with pytest.raises(RuntimeError, match="libvirt-python"):
+                onprem_provisioner.configure_networking(
+                    provision_id=provision_id,
+                    db_session=db_session,
+                    use_libvirt=True,
+                )
+
+    @patch("packages.provisioner.onprem_provisioner.libvirt")
+    @patch("packages.provisioner.onprem_provisioner.LIBVIRT_AVAILABLE", True)
+    def test_configure_networking_with_libvirt(self, mock_libvirt, provision_id, db_session):
+        """Test configure_networking with libvirt mode (mocked)."""
+        # Mock libvirt connection and network
+        mock_conn = MagicMock()
+        mock_network = MagicMock()
+        mock_network.UUIDString.return_value = "test-network-uuid"
+        mock_network.create.return_value = 0
+
+        mock_conn.networkDefineXML.return_value = mock_network
+        mock_libvirt.open.return_value = mock_conn
+
+        network_config = onprem_provisioner.configure_networking(
+            provision_id=provision_id,
+            db_session=db_session,
+            subnet="10.0.0.0/24",
+            use_libvirt=True,
+        )
+
+        # Verify libvirt was called
+        mock_libvirt.open.assert_called_once_with("qemu:///system")
+        mock_conn.networkDefineXML.assert_called_once()
+        mock_network.create.assert_called_once()
+
+        # Verify network configuration
+        assert network_config.network_id == "test-network-uuid"
+        assert network_config.network_name.startswith("hybrid-cloud-net-")
+        assert network_config.subnet == "10.0.0.0/24"
+        assert network_config.gateway == "10.0.0.1"
+        assert network_config.status == "active"
+
+        # Verify database tracking
+        resources = db_session.query(models.ResourceModel).filter_by(resource_type="network").all()
+        assert len(resources) == 1
+
+
+class TestCreateMockNetwork:
+    """Tests for _create_mock_network function."""
+
+    def test_create_mock_network_default_subnet(self, provision_id):
+        """Test creating a mock network with default subnet."""
+        network_config = onprem_provisioner._create_mock_network(
+            provision_id=provision_id,
+            subnet="10.0.0.0/24",
+        )
+
+        assert network_config.network_id
+        assert network_config.network_name.startswith("mock-network-")
+        assert network_config.subnet == "10.0.0.0/24"
+        assert network_config.gateway == "10.0.0.1"
+        assert network_config.dns_servers == ["8.8.8.8", "8.8.4.4"]
+        assert network_config.status == "active"
+
+    def test_create_mock_network_custom_subnet(self, provision_id):
+        """Test creating a mock network with custom subnet."""
+        network_config = onprem_provisioner._create_mock_network(
+            provision_id=provision_id,
+            subnet="192.168.100.0/24",
+        )
+
+        assert network_config.subnet == "192.168.100.0/24"
+        assert network_config.gateway == "192.168.100.1"
+
+    def test_create_mock_network_different_class_c(self, provision_id):
+        """Test creating a mock network with different Class C subnet."""
+        network_config = onprem_provisioner._create_mock_network(
+            provision_id=provision_id,
+            subnet="172.16.50.0/24",
+        )
+
+        assert network_config.subnet == "172.16.50.0/24"
+        assert network_config.gateway == "172.16.50.1"
+
+
+class TestCreateLibvirtNetwork:
+    """Tests for _create_libvirt_network function."""
+
+    @patch("packages.provisioner.onprem_provisioner.libvirt")
+    @patch("packages.provisioner.onprem_provisioner.LIBVIRT_AVAILABLE", True)
+    def test_create_libvirt_network_success(self, mock_libvirt, provision_id):
+        """Test successful libvirt network creation."""
+        # Mock libvirt connection and network
+        mock_conn = MagicMock()
+        mock_network = MagicMock()
+        mock_network.UUIDString.return_value = "test-uuid-1234"
+        mock_network.create.return_value = 0
+
+        mock_conn.networkDefineXML.return_value = mock_network
+        mock_libvirt.open.return_value = mock_conn
+
+        network_config = onprem_provisioner._create_libvirt_network(
+            provision_id=provision_id,
+            subnet="10.0.0.0/24",
+        )
+
+        # Verify libvirt calls
+        mock_libvirt.open.assert_called_once_with("qemu:///system")
+        mock_conn.networkDefineXML.assert_called_once()
+        mock_network.create.assert_called_once()
+        mock_conn.close.assert_called_once()
+
+        # Verify network configuration
+        assert network_config.network_id == "test-uuid-1234"
+        assert network_config.network_name.startswith("hybrid-cloud-net-")
+        assert network_config.subnet == "10.0.0.0/24"
+        assert network_config.gateway == "10.0.0.1"
+        assert network_config.dns_servers == ["8.8.8.8", "8.8.4.4"]
+        assert network_config.status == "active"
+
+    @patch("packages.provisioner.onprem_provisioner.libvirt")
+    @patch("packages.provisioner.onprem_provisioner.LIBVIRT_AVAILABLE", True)
+    def test_create_libvirt_network_connection_failure(self, mock_libvirt, provision_id):
+        """Test libvirt network creation with connection failure."""
+        mock_libvirt.open.return_value = None
+
+        with pytest.raises(RuntimeError, match="Failed to connect to libvirt"):
+            onprem_provisioner._create_libvirt_network(
+                provision_id=provision_id,
+                subnet="10.0.0.0/24",
+            )
+
+    @patch("packages.provisioner.onprem_provisioner.libvirt")
+    @patch("packages.provisioner.onprem_provisioner.LIBVIRT_AVAILABLE", True)
+    def test_create_libvirt_network_define_failure(self, mock_libvirt, provision_id):
+        """Test libvirt network creation with define failure."""
+        mock_conn = MagicMock()
+        mock_conn.networkDefineXML.return_value = None
+        mock_libvirt.open.return_value = mock_conn
+
+        with pytest.raises(RuntimeError, match="Failed to define network"):
+            onprem_provisioner._create_libvirt_network(
+                provision_id=provision_id,
+                subnet="10.0.0.0/24",
+            )
+
+    @patch("packages.provisioner.onprem_provisioner.libvirt")
+    @patch("packages.provisioner.onprem_provisioner.LIBVIRT_AVAILABLE", True)
+    def test_create_libvirt_network_start_failure(self, mock_libvirt, provision_id):
+        """Test libvirt network creation with start failure."""
+        mock_conn = MagicMock()
+        mock_network = MagicMock()
+        mock_network.create.return_value = -1
+
+        mock_conn.networkDefineXML.return_value = mock_network
+        mock_libvirt.open.return_value = mock_conn
+
+        with pytest.raises(RuntimeError, match="Failed to start network"):
+            onprem_provisioner._create_libvirt_network(
+                provision_id=provision_id,
+                subnet="10.0.0.0/24",
+            )
+
+    def test_create_libvirt_network_unavailable(self, provision_id):
+        """Test that _create_libvirt_network raises error when libvirt is unavailable."""
+        # Only test if libvirt is not available
+        if not onprem_provisioner.LIBVIRT_AVAILABLE:
+            with pytest.raises(RuntimeError, match="libvirt-python is not available"):
+                onprem_provisioner._create_libvirt_network(
+                    provision_id=provision_id,
+                    subnet="10.0.0.0/24",
+                )
+
+
+class TestGenerateNetworkXML:
+    """Tests for _generate_network_xml helper function."""
+
+    def test_generate_network_xml_default_subnet(self):
+        """Test generating network XML with default subnet."""
+        xml = onprem_provisioner._generate_network_xml(
+            name="test-network",
+            subnet="10.0.0.0/24",
+            gateway="10.0.0.1",
+            dns_servers=["8.8.8.8", "8.8.4.4"],
+        )
+
+        # Verify XML contains expected elements
+        assert "<name>test-network</name>" in xml
+        assert "<forward mode='nat'>" in xml
+        assert "address='10.0.0.1'" in xml
+        assert "netmask='255.255.255.0'" in xml
+        assert "start='10.0.0.10'" in xml
+        assert "end='10.0.0.254'" in xml
+        assert '<forwarder addr="8.8.8.8"/>' in xml
+        assert '<forwarder addr="8.8.4.4"/>' in xml
+
+    def test_generate_network_xml_custom_subnet(self):
+        """Test generating network XML with custom subnet."""
+        xml = onprem_provisioner._generate_network_xml(
+            name="custom-network",
+            subnet="192.168.1.0/24",
+            gateway="192.168.1.1",
+            dns_servers=["1.1.1.1"],
+        )
+
+        # Verify XML contains custom subnet elements
+        assert "<name>custom-network</name>" in xml
+        assert "address='192.168.1.1'" in xml
+        assert "netmask='255.255.255.0'" in xml
+        assert "start='192.168.1.10'" in xml
+        assert "end='192.168.1.254'" in xml
+        assert '<forwarder addr="1.1.1.1"/>' in xml
+
+    def test_generate_network_xml_different_prefix(self):
+        """Test generating network XML with different prefix length."""
+        xml = onprem_provisioner._generate_network_xml(
+            name="test-network",
+            subnet="172.16.0.0/16",
+            gateway="172.16.0.1",
+            dns_servers=["8.8.8.8"],
+        )
+
+        # Verify XML contains correct netmask for /16
+        assert "netmask='255.255.0.0'" in xml
+        assert "address='172.16.0.1'" in xml
+
+
+class TestNetworkConfig:
+    """Tests for NetworkConfig dataclass."""
+
+    def test_network_config_creation(self):
+        """Test creating a NetworkConfig instance."""
+        network_config = onprem_provisioner.NetworkConfig(
+            network_id="test-id",
+            network_name="test-network",
+            subnet="10.0.0.0/24",
+            gateway="10.0.0.1",
+            dns_servers=["8.8.8.8", "8.8.4.4"],
+            status="active",
+        )
+
+        assert network_config.network_id == "test-id"
+        assert network_config.network_name == "test-network"
+        assert network_config.subnet == "10.0.0.0/24"
+        assert network_config.gateway == "10.0.0.1"
+        assert network_config.dns_servers == ["8.8.8.8", "8.8.4.4"]
+        assert network_config.status == "active"
+
+    def test_network_config_with_custom_dns(self):
+        """Test NetworkConfig with custom DNS servers."""
+        network_config = onprem_provisioner.NetworkConfig(
+            network_id="test-id",
+            network_name="test-network",
+            subnet="192.168.1.0/24",
+            gateway="192.168.1.1",
+            dns_servers=["1.1.1.1", "1.0.0.1"],
+            status="active",
+        )
+
+        assert network_config.dns_servers == ["1.1.1.1", "1.0.0.1"]
+
+
+class TestNetworkingIntegration:
+    """Integration tests for networking configuration."""
+
+    def test_end_to_end_network_provisioning(self, provision_id, db_session):
+        """Test complete network provisioning workflow in mock mode."""
+        # Configure network
+        network_config = onprem_provisioner.configure_networking(
+            provision_id=provision_id,
+            db_session=db_session,
+            subnet="10.0.0.0/24",
+        )
+
+        # Verify network was created
+        assert network_config.network_id
+        assert network_config.status == "active"
+
+        # Verify database record
+        resources = (
+            db_session.query(models.ResourceModel)
+            .filter_by(provision_id=provision_id, resource_type="network")
+            .all()
+        )
+        assert len(resources) == 1
+
+        # Verify connection details are retrievable
+        resource = resources[0]
+        conn_info = json.loads(resource.connection_info_json)
+        assert conn_info["network_id"] == network_config.network_id
+        assert conn_info["subnet"] == "10.0.0.0/24"
+        assert conn_info["gateway"] == "10.0.0.1"

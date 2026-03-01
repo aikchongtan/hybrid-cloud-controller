@@ -72,6 +72,18 @@ class ContainerDetails:
     environment_vars: dict[str, str]
 
 
+@dataclass
+class NetworkConfig:
+    """Details of a configured virtual network."""
+
+    network_id: str
+    network_name: str
+    subnet: str
+    gateway: str
+    dns_servers: list[str]
+    status: str
+
+
 def provision_iaas(
     config: models.ConfigurationModel,
     provision_id: str,
@@ -699,3 +711,238 @@ def _get_container_endpoint(container) -> tuple[str, int]:
             port = int(first_port_key.split("/")[0])
 
     return ip_address, port
+
+
+def configure_networking(
+    provision_id: str,
+    db_session: Session,
+    subnet: str = "10.0.0.0/24",
+    use_libvirt: bool = False,
+) -> NetworkConfig:
+    """Configure virtual networking for provisioned resources.
+
+    Args:
+        provision_id: ID of the provision record for tracking
+        db_session: Database session for storing network configuration
+        subnet: Network subnet in CIDR notation (default: 10.0.0.0/24)
+        use_libvirt: If True, create actual libvirt network. If False, create mock network (default: False)
+
+    Returns:
+        NetworkConfig with network details
+
+    Raises:
+        RuntimeError: If use_libvirt is True but libvirt is not available
+    """
+    if use_libvirt:
+        if not LIBVIRT_AVAILABLE:
+            raise RuntimeError(
+                "Libvirt mode requires libvirt-python to be installed. "
+                "Install with: pip install libvirt-python"
+            )
+        logger.info(f"Configuring virtual network using libvirt for provision {provision_id}")
+        network_config = _create_libvirt_network(provision_id, subnet)
+    else:
+        logger.info(f"Configuring mock virtual network for provision {provision_id}")
+        network_config = _create_mock_network(provision_id, subnet)
+
+    # Track network in database
+    connection_info = {
+        "network_id": network_config.network_id,
+        "network_name": network_config.network_name,
+        "subnet": network_config.subnet,
+        "gateway": network_config.gateway,
+        "dns_servers": ",".join(network_config.dns_servers),
+    }
+
+    resource = models.ResourceModel(
+        id=str(uuid.uuid4()),
+        provision_id=provision_id,
+        resource_type="network",
+        external_id=network_config.network_id,
+        status=network_config.status,
+        connection_info_json=json.dumps(connection_info),
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(resource)
+    db_session.commit()
+
+    logger.info(
+        f"Successfully configured network {network_config.network_name} "
+        f"(subnet: {network_config.subnet}, gateway: {network_config.gateway})"
+    )
+
+    return network_config
+
+
+def _create_libvirt_network(provision_id: str, subnet: str) -> NetworkConfig:
+    """Create a virtual network using libvirt.
+
+    Args:
+        provision_id: ID of the provision record
+        subnet: Network subnet in CIDR notation (e.g., 10.0.0.0/24)
+
+    Returns:
+        NetworkConfig with libvirt network details
+
+    Raises:
+        RuntimeError: If libvirt connection or network creation fails
+    """
+    if not LIBVIRT_AVAILABLE:
+        raise RuntimeError("libvirt-python is not available")
+
+    network_name = f"hybrid-cloud-net-{provision_id[:8]}"
+
+    # Parse subnet to get network address
+    subnet_parts = subnet.split("/")
+    network_addr = subnet_parts[0]
+
+    # Calculate gateway (first usable IP in subnet)
+    addr_parts = network_addr.split(".")
+    gateway = f"{addr_parts[0]}.{addr_parts[1]}.{addr_parts[2]}.1"
+
+    # Default DNS servers
+    dns_servers = ["8.8.8.8", "8.8.4.4"]
+
+    try:
+        # Connect to libvirt
+        conn = libvirt.open("qemu:///system")
+        if conn is None:
+            raise RuntimeError("Failed to connect to libvirt (qemu:///system)")
+
+        # Generate network XML
+        xml_config = _generate_network_xml(
+            name=network_name,
+            subnet=subnet,
+            gateway=gateway,
+            dns_servers=dns_servers,
+        )
+
+        # Define and start the network
+        network = conn.networkDefineXML(xml_config)
+        if network is None:
+            raise RuntimeError(f"Failed to define network {network_name}")
+
+        if network.create() < 0:
+            raise RuntimeError(f"Failed to start network {network_name}")
+
+        # Get network UUID
+        network_id = network.UUIDString()
+
+        logger.info(
+            f"Created libvirt network: {network_name} (UUID: {network_id}) "
+            f"with subnet {subnet}, gateway {gateway}"
+        )
+
+        conn.close()
+
+        return NetworkConfig(
+            network_id=network_id,
+            network_name=network_name,
+            subnet=subnet,
+            gateway=gateway,
+            dns_servers=dns_servers,
+            status="active",
+        )
+
+    except RuntimeError:
+        # Re-raise our own RuntimeErrors
+        raise
+    except Exception as e:
+        # Handle any other unexpected errors
+        logger.error(f"Unexpected error creating network {network_name}: {e}")
+        raise RuntimeError(f"Failed to create network {network_name}: {e}") from e
+
+
+def _create_mock_network(provision_id: str, subnet: str) -> NetworkConfig:
+    """Create a mock virtual network for development.
+
+    Args:
+        provision_id: ID of the provision record
+        subnet: Network subnet in CIDR notation (e.g., 10.0.0.0/24)
+
+    Returns:
+        NetworkConfig with mock network details
+    """
+    network_id = str(uuid.uuid4())
+    network_name = f"mock-network-{provision_id[:8]}"
+
+    # Parse subnet to get network address
+    subnet_parts = subnet.split("/")
+    network_addr = subnet_parts[0]
+
+    # Calculate gateway (first usable IP in subnet)
+    addr_parts = network_addr.split(".")
+    gateway = f"{addr_parts[0]}.{addr_parts[1]}.{addr_parts[2]}.1"
+
+    # Default DNS servers
+    dns_servers = ["8.8.8.8", "8.8.4.4"]
+
+    logger.info(
+        f"Created mock network: {network_name} with subnet {subnet}, gateway {gateway} "
+        "(This is a mock network - no actual network resources created)"
+    )
+
+    return NetworkConfig(
+        network_id=network_id,
+        network_name=network_name,
+        subnet=subnet,
+        gateway=gateway,
+        dns_servers=dns_servers,
+        status="active",
+    )
+
+
+def _generate_network_xml(
+    name: str,
+    subnet: str,
+    gateway: str,
+    dns_servers: list[str],
+) -> str:
+    """Generate libvirt XML definition for a virtual network.
+
+    Args:
+        name: Name of the network
+        subnet: Network subnet in CIDR notation (e.g., 10.0.0.0/24)
+        gateway: Gateway IP address
+        dns_servers: List of DNS server IP addresses
+
+    Returns:
+        XML string for libvirt network definition
+    """
+    # Parse subnet to get network address and netmask
+    subnet_parts = subnet.split("/")
+    network_addr = subnet_parts[0]
+    prefix = int(subnet_parts[1]) if len(subnet_parts) > 1 else 24
+
+    # Calculate netmask from prefix
+    netmask_bits = (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
+    netmask = ".".join(str((netmask_bits >> (24 - i * 8)) & 0xFF) for i in range(4))
+
+    # Calculate DHCP range (e.g., .10 to .254)
+    addr_parts = network_addr.split(".")
+    dhcp_start = f"{addr_parts[0]}.{addr_parts[1]}.{addr_parts[2]}.10"
+    dhcp_end = f"{addr_parts[0]}.{addr_parts[1]}.{addr_parts[2]}.254"
+
+    # Build DNS forwarder entries
+    dns_forwarders = "\n    ".join(f'<forwarder addr="{dns}"/>' for dns in dns_servers)
+
+    xml = f"""
+<network>
+  <name>{name}</name>
+  <forward mode='nat'>
+    <nat>
+      <port start='1024' end='65535'/>
+    </nat>
+  </forward>
+  <bridge name='virbr-{name[:8]}' stp='on' delay='0'/>
+  <ip address='{gateway}' netmask='{netmask}'>
+    <dhcp>
+      <range start='{dhcp_start}' end='{dhcp_end}'/>
+    </dhcp>
+  </ip>
+  <dns>
+    {dns_forwarders}
+  </dns>
+</network>
+"""
+    return xml.strip()

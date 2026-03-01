@@ -43,14 +43,17 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
     # Register error handlers
     _register_error_handlers(app)
 
-    # Register blueprints (routes will be added in future tasks)
-    # from packages.api.routes import configuration, tco, provisioning, qa, monitoring, auth
+    # Register blueprints
+    from packages.api.routes import auth as auth_routes
+
+    app.register_blueprint(auth_routes.bp)
+    # Additional routes will be added in future tasks:
+    # from packages.api.routes import configuration, tco, provisioning, qa, monitoring
     # app.register_blueprint(configuration.bp)
     # app.register_blueprint(tco.bp)
     # app.register_blueprint(provisioning.bp)
     # app.register_blueprint(qa.bp)
     # app.register_blueprint(monitoring.bp)
-    # app.register_blueprint(auth.bp)
 
     logger.info("Flask application created successfully")
     return app

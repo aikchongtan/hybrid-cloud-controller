@@ -9,3 +9,4 @@ bcrypt>=4.1.0
 cryptography>=42.0.0
 hypothesis>=6.98.0
 python-terraform>=0.10.1
+docker>=7.0.0

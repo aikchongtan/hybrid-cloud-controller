@@ -1,6 +1,7 @@
 """Unit tests for on-premises IaaS provisioner."""
 
 import json
+import subprocess
 import uuid
 from datetime import datetime
 from unittest.mock import MagicMock, patch
@@ -571,3 +572,618 @@ class TestIntegration:
         ids1 = {r.id for r in resources1}
         ids2 = {r.id for r in resources2}
         assert ids1.isdisjoint(ids2)
+
+
+class TestProvisionCaaS:
+    """Tests for provision_caas function."""
+
+    @patch("packages.provisioner.onprem_provisioner._detect_container_runtime")
+    @patch("packages.provisioner.onprem_provisioner.create_container")
+    def test_provision_caas_docker(
+        self, mock_create_container, mock_detect_runtime, sample_config, provision_id, db_session
+    ):
+        """Test CaaS provisioning with Docker."""
+        mock_detect_runtime.return_value = "docker"
+
+        # Mock container creation
+        mock_containers = [
+            onprem_provisioner.ContainerDetails(
+                container_id=f"container-{i}",
+                name=f"test-container-{i}",
+                image_url="nginx:latest",
+                cpu_limit=4.0,
+                memory_limit_mb=8192,
+                endpoint=f"172.17.0.{i + 2}",
+                port=80,
+                status="running",
+                environment_vars={"ENV": "test"},
+            )
+            for i in range(2)
+        ]
+        mock_create_container.side_effect = mock_containers
+
+        containers = onprem_provisioner.provision_caas(
+            config=sample_config,
+            image_url="nginx:latest",
+            provision_id=provision_id,
+            db_session=db_session,
+            environment_vars={"ENV": "test"},
+        )
+
+        # Verify containers were created
+        assert len(containers) == 2
+        assert mock_create_container.call_count == 2
+
+        # Verify database tracking
+        resources = db_session.query(models.ResourceModel).all()
+        assert len(resources) == 2
+
+        for resource in resources:
+            assert resource.provision_id == provision_id
+            assert resource.resource_type == "container"
+            assert resource.status == "running"
+
+            conn_info = json.loads(resource.connection_info_json)
+            assert "endpoint" in conn_info
+            assert "port" in conn_info
+            assert "container_id" in conn_info
+            assert "image_url" in conn_info
+
+    @patch("packages.provisioner.onprem_provisioner._detect_container_runtime")
+    @patch("packages.provisioner.onprem_provisioner.create_container")
+    def test_provision_caas_podman(
+        self, mock_create_container, mock_detect_runtime, sample_config, provision_id, db_session
+    ):
+        """Test CaaS provisioning with Podman."""
+        mock_detect_runtime.return_value = "podman"
+
+        mock_container = onprem_provisioner.ContainerDetails(
+            container_id="podman-container-1",
+            name="test-container",
+            image_url="nginx:latest",
+            cpu_limit=4.0,
+            memory_limit_mb=8192,
+            endpoint="10.88.0.2",
+            port=80,
+            status="running",
+            environment_vars={},
+        )
+        mock_create_container.return_value = mock_container
+
+        containers = onprem_provisioner.provision_caas(
+            config=sample_config,
+            image_url="nginx:latest",
+            provision_id=provision_id,
+            db_session=db_session,
+            use_podman=True,
+        )
+
+        assert len(containers) == 2
+        mock_detect_runtime.assert_called_once_with(True)
+
+    @patch("packages.provisioner.onprem_provisioner._detect_container_runtime")
+    def test_provision_caas_no_runtime(
+        self, mock_detect_runtime, sample_config, provision_id, db_session
+    ):
+        """Test CaaS provisioning when neither Docker nor Podman is available."""
+        mock_detect_runtime.return_value = None
+
+        with pytest.raises(RuntimeError, match="Neither Docker nor Podman is available"):
+            onprem_provisioner.provision_caas(
+                config=sample_config,
+                image_url="nginx:latest",
+                provision_id=provision_id,
+                db_session=db_session,
+            )
+
+    @patch("packages.provisioner.onprem_provisioner._detect_container_runtime")
+    @patch("packages.provisioner.onprem_provisioner.create_container")
+    def test_provision_caas_with_environment_vars(
+        self, mock_create_container, mock_detect_runtime, sample_config, provision_id, db_session
+    ):
+        """Test CaaS provisioning with environment variables."""
+        mock_detect_runtime.return_value = "docker"
+
+        env_vars = {
+            "DATABASE_URL": "postgresql://localhost/db",
+            "API_KEY": "secret-key",
+            "DEBUG": "true",
+        }
+
+        mock_container = onprem_provisioner.ContainerDetails(
+            container_id="container-1",
+            name="test-container",
+            image_url="myapp:latest",
+            cpu_limit=4.0,
+            memory_limit_mb=8192,
+            endpoint="172.17.0.2",
+            port=8080,
+            status="running",
+            environment_vars=env_vars,
+        )
+        mock_create_container.return_value = mock_container
+
+        onprem_provisioner.provision_caas(
+            config=sample_config,
+            image_url="myapp:latest",
+            provision_id=provision_id,
+            db_session=db_session,
+            environment_vars=env_vars,
+        )
+
+        # Verify environment variables were passed
+        call_args = mock_create_container.call_args_list[0]
+        assert call_args[1]["environment_vars"] == env_vars
+
+    @patch("packages.provisioner.onprem_provisioner._detect_container_runtime")
+    @patch("packages.provisioner.onprem_provisioner.create_container")
+    def test_provision_caas_single_container(
+        self, mock_create_container, mock_detect_runtime, provision_id, db_session
+    ):
+        """Test provisioning a single container."""
+        mock_detect_runtime.return_value = "docker"
+
+        config = models.ConfigurationModel(
+            id=str(uuid.uuid4()),
+            user_id=str(uuid.uuid4()),
+            cpu_cores=2,
+            memory_gb=4,
+            instance_count=1,
+            storage_type="ssd",
+            storage_capacity_gb=50,
+            storage_iops=1000,
+            bandwidth_mbps=500,
+            monthly_data_transfer_gb=100,
+            utilization_percentage=50,
+            operating_hours_per_month=360,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+
+        mock_container = onprem_provisioner.ContainerDetails(
+            container_id="container-1",
+            name="test-container",
+            image_url="nginx:latest",
+            cpu_limit=2.0,
+            memory_limit_mb=4096,
+            endpoint="172.17.0.2",
+            port=80,
+            status="running",
+            environment_vars={},
+        )
+        mock_create_container.return_value = mock_container
+
+        containers = onprem_provisioner.provision_caas(
+            config=config,
+            image_url="nginx:latest",
+            provision_id=provision_id,
+            db_session=db_session,
+        )
+
+        assert len(containers) == 1
+        assert containers[0].cpu_limit == 2.0
+        assert containers[0].memory_limit_mb == 4096
+
+
+class TestCreateContainer:
+    """Tests for create_container function."""
+
+    @patch("packages.provisioner.onprem_provisioner._create_docker_container")
+    def test_create_container_docker(self, mock_create_docker, sample_config, provision_id):
+        """Test creating a container with Docker."""
+        mock_create_docker.return_value = ("container-id-123", "172.17.0.2", 80)
+
+        container = onprem_provisioner.create_container(
+            config=sample_config,
+            image_url="nginx:latest",
+            provision_id=provision_id,
+            index=0,
+            environment_vars={"ENV": "test"},
+            runtime="docker",
+        )
+
+        assert container.container_id == "container-id-123"
+        assert container.endpoint == "172.17.0.2"
+        assert container.port == 80
+        assert container.cpu_limit == 4.0
+        assert container.memory_limit_mb == 8192
+        assert container.status == "running"
+        assert container.environment_vars == {"ENV": "test"}
+
+        mock_create_docker.assert_called_once()
+
+    @patch("packages.provisioner.onprem_provisioner._create_podman_container")
+    def test_create_container_podman(self, mock_create_podman, sample_config, provision_id):
+        """Test creating a container with Podman."""
+        mock_create_podman.return_value = ("podman-id-456", "10.88.0.2", 8080)
+
+        container = onprem_provisioner.create_container(
+            config=sample_config,
+            image_url="myapp:v1",
+            provision_id=provision_id,
+            index=1,
+            environment_vars={"DEBUG": "true"},
+            runtime="podman",
+        )
+
+        assert container.container_id == "podman-id-456"
+        assert container.endpoint == "10.88.0.2"
+        assert container.port == 8080
+        assert container.status == "running"
+
+        mock_create_podman.assert_called_once()
+
+    @patch("packages.provisioner.onprem_provisioner._create_docker_container")
+    def test_create_container_failure(self, mock_create_docker, sample_config, provision_id):
+        """Test container creation failure."""
+        mock_create_docker.side_effect = Exception("Docker daemon not running")
+
+        with pytest.raises(RuntimeError, match="Failed to create container"):
+            onprem_provisioner.create_container(
+                config=sample_config,
+                image_url="nginx:latest",
+                provision_id=provision_id,
+                index=0,
+                environment_vars={},
+                runtime="docker",
+            )
+
+    def test_create_container_resource_limits(self, sample_config, provision_id):
+        """Test that resource limits are calculated correctly."""
+        with patch("packages.provisioner.onprem_provisioner._create_docker_container") as mock:
+            mock.return_value = ("id", "172.17.0.2", 80)
+
+            container = onprem_provisioner.create_container(
+                config=sample_config,
+                image_url="nginx:latest",
+                provision_id=provision_id,
+                index=0,
+                environment_vars={},
+                runtime="docker",
+            )
+
+            # Verify CPU and memory limits
+            assert container.cpu_limit == float(sample_config.cpu_cores)
+            assert container.memory_limit_mb == sample_config.memory_gb * 1024
+
+
+class TestDetectContainerRuntime:
+    """Tests for _detect_container_runtime function."""
+
+    @patch("packages.provisioner.onprem_provisioner.shutil.which")
+    def test_detect_docker_available(self, mock_which):
+        """Test detection when only Docker is available."""
+        mock_which.side_effect = lambda cmd: "/usr/bin/docker" if cmd == "docker" else None
+
+        runtime = onprem_provisioner._detect_container_runtime()
+        assert runtime == "docker"
+
+    @patch("packages.provisioner.onprem_provisioner.shutil.which")
+    def test_detect_podman_available(self, mock_which):
+        """Test detection when only Podman is available."""
+        mock_which.side_effect = lambda cmd: "/usr/bin/podman" if cmd == "podman" else None
+
+        runtime = onprem_provisioner._detect_container_runtime()
+        assert runtime == "podman"
+
+    @patch("packages.provisioner.onprem_provisioner.shutil.which")
+    def test_detect_both_available_prefer_docker(self, mock_which):
+        """Test detection when both are available (default: prefer Docker)."""
+        mock_which.return_value = "/usr/bin/something"
+
+        runtime = onprem_provisioner._detect_container_runtime(prefer_podman=False)
+        assert runtime == "docker"
+
+    @patch("packages.provisioner.onprem_provisioner.shutil.which")
+    def test_detect_both_available_prefer_podman(self, mock_which):
+        """Test detection when both are available (prefer Podman)."""
+        mock_which.return_value = "/usr/bin/something"
+
+        runtime = onprem_provisioner._detect_container_runtime(prefer_podman=True)
+        assert runtime == "podman"
+
+    @patch("packages.provisioner.onprem_provisioner.shutil.which")
+    def test_detect_neither_available(self, mock_which):
+        """Test detection when neither is available."""
+        mock_which.return_value = None
+
+        runtime = onprem_provisioner._detect_container_runtime()
+        assert runtime is None
+
+
+class TestCreateDockerContainer:
+    """Tests for _create_docker_container function."""
+
+    @patch("packages.provisioner.onprem_provisioner.DOCKER_AVAILABLE", False)
+    def test_create_docker_container_sdk_not_available(self):
+        """Test Docker container creation when SDK is not available."""
+        with pytest.raises(RuntimeError, match="Docker SDK is not available"):
+            onprem_provisioner._create_docker_container(
+                name="test",
+                image_url="nginx:latest",
+                cpu_limit=2.0,
+                memory_limit_mb=4096,
+                environment_vars={},
+            )
+
+    @patch("packages.provisioner.onprem_provisioner.DOCKER_AVAILABLE", True)
+    @patch("packages.provisioner.onprem_provisioner.docker")
+    def test_create_docker_container_success(self, mock_docker_module):
+        """Test successful Docker container creation."""
+        # Mock Docker client and container
+        mock_client = MagicMock()
+        mock_container = MagicMock()
+        mock_container.id = "abc123def456"
+
+        mock_docker_module.from_env.return_value = mock_client
+        mock_client.containers.run.return_value = mock_container
+
+        # Mock container endpoint
+        with patch(
+            "packages.provisioner.onprem_provisioner._get_container_endpoint"
+        ) as mock_endpoint:
+            mock_endpoint.return_value = ("172.17.0.2", 80)
+
+            container_id, endpoint, port = onprem_provisioner._create_docker_container(
+                name="test-container",
+                image_url="nginx:latest",
+                cpu_limit=2.0,
+                memory_limit_mb=4096,
+                environment_vars={"ENV": "test"},
+            )
+
+            # Verify results
+            assert container_id == "abc123def456"
+            assert endpoint == "172.17.0.2"
+            assert port == 80
+
+            # Verify Docker API calls
+            mock_client.images.pull.assert_called_once_with("nginx:latest")
+            mock_client.containers.run.assert_called_once()
+
+            # Verify resource limits
+            call_kwargs = mock_client.containers.run.call_args[1]
+            assert call_kwargs["cpu_period"] == 100000
+            assert call_kwargs["cpu_quota"] == 200000  # 2.0 * 100000
+            assert call_kwargs["mem_limit"] == 4096 * 1024 * 1024
+            assert call_kwargs["environment"] == {"ENV": "test"}
+
+    @patch("packages.provisioner.onprem_provisioner.DOCKER_AVAILABLE", True)
+    @patch("packages.provisioner.onprem_provisioner.docker")
+    def test_create_docker_container_pull_failure(self, mock_docker_module):
+        """Test Docker container creation when image pull fails."""
+        mock_client = MagicMock()
+        mock_docker_module.from_env.return_value = mock_client
+        mock_client.images.pull.side_effect = Exception("Image not found")
+
+        with pytest.raises(RuntimeError, match="Docker container creation failed"):
+            onprem_provisioner._create_docker_container(
+                name="test",
+                image_url="invalid:image",
+                cpu_limit=1.0,
+                memory_limit_mb=2048,
+                environment_vars={},
+            )
+
+    @patch("packages.provisioner.onprem_provisioner.DOCKER_AVAILABLE", True)
+    @patch("packages.provisioner.onprem_provisioner.docker")
+    def test_create_docker_container_cpu_limits(self, mock_docker_module):
+        """Test Docker CPU limit calculation."""
+        mock_client = MagicMock()
+        mock_container = MagicMock()
+        mock_container.id = "test-id"
+
+        mock_docker_module.from_env.return_value = mock_client
+        mock_client.containers.run.return_value = mock_container
+
+        with patch(
+            "packages.provisioner.onprem_provisioner._get_container_endpoint"
+        ) as mock_endpoint:
+            mock_endpoint.return_value = ("172.17.0.2", 80)
+
+            # Test 0.5 CPU
+            onprem_provisioner._create_docker_container(
+                name="test",
+                image_url="nginx:latest",
+                cpu_limit=0.5,
+                memory_limit_mb=1024,
+                environment_vars={},
+            )
+
+            call_kwargs = mock_client.containers.run.call_args[1]
+            assert call_kwargs["cpu_quota"] == 50000  # 0.5 * 100000
+
+
+class TestCreatePodmanContainer:
+    """Tests for _create_podman_container function."""
+
+    @patch("packages.provisioner.onprem_provisioner.subprocess.run")
+    def test_create_podman_container_success(self, mock_run):
+        """Test successful Podman container creation."""
+        # Mock subprocess calls
+        mock_run.side_effect = [
+            MagicMock(returncode=0),  # pull
+            MagicMock(stdout="container-id-789\n", returncode=0),  # run
+            MagicMock(
+                stdout=json.dumps(
+                    [
+                        {
+                            "NetworkSettings": {
+                                "IPAddress": "10.88.0.2",
+                                "Ports": {"8080/tcp": None},
+                            }
+                        }
+                    ]
+                ),
+                returncode=0,
+            ),  # inspect
+        ]
+
+        container_id, endpoint, port = onprem_provisioner._create_podman_container(
+            name="test-container",
+            image_url="nginx:latest",
+            cpu_limit=2.0,
+            memory_limit_mb=4096,
+            environment_vars={"ENV": "test"},
+        )
+
+        assert container_id == "container-id-789"
+        assert endpoint == "10.88.0.2"
+        assert port == 8080
+
+        # Verify subprocess calls
+        assert mock_run.call_count == 3
+
+    @patch("packages.provisioner.onprem_provisioner.subprocess.run")
+    def test_create_podman_container_pull_failure(self, mock_run):
+        """Test Podman container creation when image pull fails."""
+        mock_run.side_effect = subprocess.CalledProcessError(
+            1, ["podman", "pull"], stderr="Image not found"
+        )
+
+        with pytest.raises(RuntimeError, match="Podman container creation failed"):
+            onprem_provisioner._create_podman_container(
+                name="test",
+                image_url="invalid:image",
+                cpu_limit=1.0,
+                memory_limit_mb=2048,
+                environment_vars={},
+            )
+
+    @patch("packages.provisioner.onprem_provisioner.subprocess.run")
+    def test_create_podman_container_with_env_vars(self, mock_run):
+        """Test Podman container creation with environment variables."""
+        mock_run.side_effect = [
+            MagicMock(returncode=0),  # pull
+            MagicMock(stdout="container-id\n", returncode=0),  # run
+            MagicMock(
+                stdout=json.dumps([{"NetworkSettings": {"IPAddress": "10.88.0.2", "Ports": {}}}]),
+                returncode=0,
+            ),  # inspect
+        ]
+
+        env_vars = {"KEY1": "value1", "KEY2": "value2"}
+
+        onprem_provisioner._create_podman_container(
+            name="test",
+            image_url="nginx:latest",
+            cpu_limit=1.0,
+            memory_limit_mb=2048,
+            environment_vars=env_vars,
+        )
+
+        # Verify environment variables were passed
+        run_call = mock_run.call_args_list[1]
+        run_cmd = run_call[0][0]
+        assert "-e" in run_cmd
+        assert "KEY1=value1" in run_cmd
+        assert "KEY2=value2" in run_cmd
+
+
+class TestGetContainerEndpoint:
+    """Tests for _get_container_endpoint function."""
+
+    def test_get_container_endpoint_with_ip_and_port(self):
+        """Test getting endpoint when container has IP and exposed ports."""
+        mock_container = MagicMock()
+        mock_container.attrs = {
+            "NetworkSettings": {
+                "IPAddress": "172.17.0.5",
+                "Ports": {"8080/tcp": None, "9090/tcp": None},
+            }
+        }
+
+        endpoint, port = onprem_provisioner._get_container_endpoint(mock_container)
+
+        assert endpoint == "172.17.0.5"
+        assert port == 8080  # First port
+
+    def test_get_container_endpoint_no_ip(self):
+        """Test getting endpoint when container has no IP (uses default)."""
+        mock_container = MagicMock()
+        mock_container.attrs = {"NetworkSettings": {"Ports": {"80/tcp": None}}}
+
+        endpoint, port = onprem_provisioner._get_container_endpoint(mock_container)
+
+        assert endpoint == "127.0.0.1"  # Default
+        assert port == 80
+
+    def test_get_container_endpoint_no_ports(self):
+        """Test getting endpoint when container has no exposed ports."""
+        mock_container = MagicMock()
+        mock_container.attrs = {"NetworkSettings": {"IPAddress": "172.17.0.3", "Ports": {}}}
+
+        endpoint, port = onprem_provisioner._get_container_endpoint(mock_container)
+
+        assert endpoint == "172.17.0.3"
+        assert port == 80  # Default
+
+
+class TestContainerDetails:
+    """Tests for ContainerDetails dataclass."""
+
+    def test_container_details_creation(self):
+        """Test creating a ContainerDetails instance."""
+        container = onprem_provisioner.ContainerDetails(
+            container_id="abc123",
+            name="test-container",
+            image_url="nginx:latest",
+            cpu_limit=2.0,
+            memory_limit_mb=4096,
+            endpoint="172.17.0.2",
+            port=80,
+            status="running",
+            environment_vars={"ENV": "test"},
+        )
+
+        assert container.container_id == "abc123"
+        assert container.name == "test-container"
+        assert container.image_url == "nginx:latest"
+        assert container.cpu_limit == 2.0
+        assert container.memory_limit_mb == 4096
+        assert container.endpoint == "172.17.0.2"
+        assert container.port == 80
+        assert container.status == "running"
+        assert container.environment_vars == {"ENV": "test"}
+
+
+class TestCaaSIntegration:
+    """Integration tests for CaaS provisioning."""
+
+    @patch("packages.provisioner.onprem_provisioner._detect_container_runtime")
+    @patch("packages.provisioner.onprem_provisioner._create_docker_container")
+    def test_end_to_end_caas_provisioning(
+        self, mock_create_docker, mock_detect_runtime, sample_config, provision_id, db_session
+    ):
+        """Test complete CaaS provisioning workflow."""
+        mock_detect_runtime.return_value = "docker"
+        mock_create_docker.side_effect = [
+            ("container-1", "172.17.0.2", 80),
+            ("container-2", "172.17.0.3", 80),
+        ]
+
+        # Provision containers
+        containers = onprem_provisioner.provision_caas(
+            config=sample_config,
+            image_url="nginx:latest",
+            provision_id=provision_id,
+            db_session=db_session,
+            environment_vars={"ENV": "production"},
+        )
+
+        # Verify containers were created
+        assert len(containers) == sample_config.instance_count
+
+        # Verify database records
+        resources = (
+            db_session.query(models.ResourceModel).filter_by(provision_id=provision_id).all()
+        )
+        assert len(resources) == sample_config.instance_count
+
+        # Verify connection details are retrievable
+        for resource in resources:
+            conn_info = json.loads(resource.connection_info_json)
+            assert conn_info["endpoint"]
+            assert conn_info["port"]
+            assert conn_info["container_id"]
+            assert conn_info["image_url"] == "nginx:latest"

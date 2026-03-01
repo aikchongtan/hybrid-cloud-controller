@@ -1,8 +1,7 @@
 """Unit tests for LocalStack adapter."""
 
 import uuid
-from datetime import datetime
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -13,6 +12,7 @@ from packages.provisioner.localstack_adapter import (
     ECSDeployment,
     NetworkConfig,
     NetworkSpec,
+    ResourceState,
     ResourceStatus,
     StorageSpec,
     _get_boto3_client,
@@ -22,6 +22,10 @@ from packages.provisioner.localstack_adapter import (
     create_ebs_volume,
     create_ec2_instance,
     deploy_to_ecs,
+    get_resource_status,
+    start_resource,
+    stop_resource,
+    terminate_resource,
 )
 
 
@@ -385,7 +389,7 @@ async def test_deploy_to_ecs_without_env_vars(mock_get_client):
 
     mock_session = MagicMock()
 
-    result = await deploy_to_ecs(image_url, 1, 2, provision_id, mock_session)
+    await deploy_to_ecs(image_url, 1, 2, provision_id, mock_session)
 
     # Verify task definition has empty environment list
     task_def_call = mock_ecs.register_task_definition.call_args[1]
@@ -483,3 +487,716 @@ def test_ecs_deployment_dataclass():
     assert "service" in deployment.service_arn
     assert "task-definition" in deployment.task_definition_arn
     assert deployment.endpoint == "http://localhost:8080"
+
+
+def test_resource_state_dataclass():
+    """Test ResourceState dataclass creation."""
+    state = ResourceState(
+        resource_id="res-12345",
+        resource_type="ec2_instance",
+        external_id="i-12345",
+        status="running",
+        details={"instance_type": "t2.micro", "public_ip": "54.1.2.3"},
+    )
+
+    assert state.resource_id == "res-12345"
+    assert state.resource_type == "ec2_instance"
+    assert state.external_id == "i-12345"
+    assert state.status == "running"
+    assert state.details["instance_type"] == "t2.micro"
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_start_resource_ec2_instance(mock_get_client):
+    """Test starting an EC2 instance."""
+    resource_id = str(uuid.uuid4())
+    external_id = "i-12345"
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ec2_instance"
+    mock_resource.external_id = external_id
+    mock_resource.status = "stopped"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock EC2 client
+    mock_ec2 = MagicMock()
+    mock_get_client.return_value = mock_ec2
+
+    result = start_resource(resource_id, mock_session)
+
+    assert result.resource_id == resource_id
+    assert result.resource_type == "ec2_instance"
+    assert result.external_id == external_id
+    assert result.status == "running"
+
+    # Verify EC2 start_instances was called
+    mock_ec2.start_instances.assert_called_once_with(InstanceIds=[external_id])
+
+    # Verify database was updated
+    assert mock_resource.status == "running"
+    mock_session.commit.assert_called_once()
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_start_resource_ecs_service(mock_get_client):
+    """Test starting an ECS service."""
+    resource_id = str(uuid.uuid4())
+    external_id = "arn:aws:ecs:us-east-1:123456789:service/my-cluster/my-service"
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ecs_service"
+    mock_resource.external_id = external_id
+    mock_resource.status = "stopped"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock ECS client
+    mock_ecs = MagicMock()
+    mock_get_client.return_value = mock_ecs
+
+    result = start_resource(resource_id, mock_session)
+
+    assert result.resource_id == resource_id
+    assert result.resource_type == "ecs_service"
+    assert result.status == "running"
+
+    # Verify ECS update_service was called with desiredCount=1
+    mock_ecs.update_service.assert_called_once()
+    call_args = mock_ecs.update_service.call_args[1]
+    assert call_args["desiredCount"] == 1
+
+
+def test_start_resource_not_found():
+    """Test starting a resource that doesn't exist in database."""
+    resource_id = str(uuid.uuid4())
+
+    # Mock database session with no resource found
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+    with pytest.raises(ValueError, match="Resource .* not found in database"):
+        start_resource(resource_id, mock_session)
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_start_resource_api_failure(mock_get_client):
+    """Test starting a resource when AWS API fails."""
+    resource_id = str(uuid.uuid4())
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ec2_instance"
+    mock_resource.external_id = "i-12345"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock EC2 client to raise exception
+    mock_ec2 = MagicMock()
+    mock_get_client.return_value = mock_ec2
+    mock_ec2.start_instances.side_effect = Exception("API error")
+
+    with pytest.raises(RuntimeError, match="Failed to start resource"):
+        start_resource(resource_id, mock_session)
+
+    # Verify rollback was called
+    mock_session.rollback.assert_called_once()
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_stop_resource_ec2_instance(mock_get_client):
+    """Test stopping an EC2 instance."""
+    resource_id = str(uuid.uuid4())
+    external_id = "i-12345"
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ec2_instance"
+    mock_resource.external_id = external_id
+    mock_resource.status = "running"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock EC2 client
+    mock_ec2 = MagicMock()
+    mock_get_client.return_value = mock_ec2
+
+    result = stop_resource(resource_id, mock_session)
+
+    assert result.resource_id == resource_id
+    assert result.resource_type == "ec2_instance"
+    assert result.external_id == external_id
+    assert result.status == "stopped"
+
+    # Verify EC2 stop_instances was called
+    mock_ec2.stop_instances.assert_called_once_with(InstanceIds=[external_id])
+
+    # Verify database was updated
+    assert mock_resource.status == "stopped"
+    mock_session.commit.assert_called_once()
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_stop_resource_ecs_service(mock_get_client):
+    """Test stopping an ECS service."""
+    resource_id = str(uuid.uuid4())
+    external_id = "arn:aws:ecs:us-east-1:123456789:service/my-cluster/my-service"
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ecs_service"
+    mock_resource.external_id = external_id
+    mock_resource.status = "running"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock ECS client
+    mock_ecs = MagicMock()
+    mock_get_client.return_value = mock_ecs
+
+    result = stop_resource(resource_id, mock_session)
+
+    assert result.resource_id == resource_id
+    assert result.resource_type == "ecs_service"
+    assert result.status == "stopped"
+
+    # Verify ECS update_service was called with desiredCount=0
+    mock_ecs.update_service.assert_called_once()
+    call_args = mock_ecs.update_service.call_args[1]
+    assert call_args["desiredCount"] == 0
+
+
+def test_stop_resource_not_found():
+    """Test stopping a resource that doesn't exist in database."""
+    resource_id = str(uuid.uuid4())
+
+    # Mock database session with no resource found
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+    with pytest.raises(ValueError, match="Resource .* not found in database"):
+        stop_resource(resource_id, mock_session)
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_terminate_resource_ec2_instance(mock_get_client):
+    """Test terminating an EC2 instance."""
+    resource_id = str(uuid.uuid4())
+    external_id = "i-12345"
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ec2_instance"
+    mock_resource.external_id = external_id
+    mock_resource.status = "running"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock EC2 client
+    mock_ec2 = MagicMock()
+    mock_get_client.return_value = mock_ec2
+
+    result = terminate_resource(resource_id, mock_session)
+
+    assert result.resource_id == resource_id
+    assert result.resource_type == "ec2_instance"
+    assert result.external_id == external_id
+    assert result.status == "terminated"
+
+    # Verify EC2 terminate_instances was called
+    mock_ec2.terminate_instances.assert_called_once_with(InstanceIds=[external_id])
+
+    # Verify database was updated
+    assert mock_resource.status == "terminated"
+    mock_session.commit.assert_called_once()
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_terminate_resource_ecs_service(mock_get_client):
+    """Test terminating an ECS service."""
+    resource_id = str(uuid.uuid4())
+    external_id = "arn:aws:ecs:us-east-1:123456789:service/my-cluster/my-service"
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ecs_service"
+    mock_resource.external_id = external_id
+    mock_resource.status = "running"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock ECS client
+    mock_ecs = MagicMock()
+    mock_get_client.return_value = mock_ecs
+
+    result = terminate_resource(resource_id, mock_session)
+
+    assert result.resource_id == resource_id
+    assert result.resource_type == "ecs_service"
+    assert result.status == "terminated"
+
+    # Verify ECS delete_service was called with force=True
+    mock_ecs.delete_service.assert_called_once()
+    call_args = mock_ecs.delete_service.call_args[1]
+    assert call_args["force"] is True
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_terminate_resource_ecs_cluster(mock_get_client):
+    """Test terminating an ECS cluster."""
+    resource_id = str(uuid.uuid4())
+    external_id = "arn:aws:ecs:us-east-1:123456789:cluster/my-cluster"
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ecs_cluster"
+    mock_resource.external_id = external_id
+    mock_resource.status = "active"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock ECS client
+    mock_ecs = MagicMock()
+    mock_get_client.return_value = mock_ecs
+
+    result = terminate_resource(resource_id, mock_session)
+
+    assert result.resource_type == "ecs_cluster"
+    assert result.status == "terminated"
+
+    # Verify ECS delete_cluster was called
+    mock_ecs.delete_cluster.assert_called_once_with(cluster=external_id)
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_terminate_resource_ebs_volume(mock_get_client):
+    """Test terminating an EBS volume."""
+    resource_id = str(uuid.uuid4())
+    external_id = "vol-12345"
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ebs_volume"
+    mock_resource.external_id = external_id
+    mock_resource.status = "available"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock EC2 client
+    mock_ec2 = MagicMock()
+    mock_get_client.return_value = mock_ec2
+
+    result = terminate_resource(resource_id, mock_session)
+
+    assert result.resource_type == "ebs_volume"
+    assert result.status == "terminated"
+
+    # Verify EC2 delete_volume was called
+    mock_ec2.delete_volume.assert_called_once_with(VolumeId=external_id)
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_terminate_resource_vpc_resources(mock_get_client):
+    """Test terminating VPC resources (security group, subnet, VPC)."""
+    # Test security group
+    resource_id_sg = str(uuid.uuid4())
+    mock_session = MagicMock()
+    mock_resource_sg = MagicMock()
+    mock_resource_sg.id = resource_id_sg
+    mock_resource_sg.resource_type = "security_group"
+    mock_resource_sg.external_id = "sg-12345"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource_sg
+
+    mock_ec2 = MagicMock()
+    mock_get_client.return_value = mock_ec2
+
+    result = terminate_resource(resource_id_sg, mock_session)
+    assert result.status == "terminated"
+    mock_ec2.delete_security_group.assert_called_once_with(GroupId="sg-12345")
+
+    # Test subnet
+    resource_id_subnet = str(uuid.uuid4())
+    mock_resource_subnet = MagicMock()
+    mock_resource_subnet.id = resource_id_subnet
+    mock_resource_subnet.resource_type = "subnet"
+    mock_resource_subnet.external_id = "subnet-12345"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource_subnet
+
+    result = terminate_resource(resource_id_subnet, mock_session)
+    assert result.status == "terminated"
+    mock_ec2.delete_subnet.assert_called_with(SubnetId="subnet-12345")
+
+    # Test VPC
+    resource_id_vpc = str(uuid.uuid4())
+    mock_resource_vpc = MagicMock()
+    mock_resource_vpc.id = resource_id_vpc
+    mock_resource_vpc.resource_type = "vpc"
+    mock_resource_vpc.external_id = "vpc-12345"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource_vpc
+
+    result = terminate_resource(resource_id_vpc, mock_session)
+    assert result.status == "terminated"
+    mock_ec2.delete_vpc.assert_called_with(VpcId="vpc-12345")
+
+
+def test_terminate_resource_not_found():
+    """Test terminating a resource that doesn't exist in database."""
+    resource_id = str(uuid.uuid4())
+
+    # Mock database session with no resource found
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+    with pytest.raises(ValueError, match="Resource .* not found in database"):
+        terminate_resource(resource_id, mock_session)
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_get_resource_status_ec2_instance(mock_get_client):
+    """Test getting status of an EC2 instance."""
+    resource_id = str(uuid.uuid4())
+    external_id = "i-12345"
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ec2_instance"
+    mock_resource.external_id = external_id
+    mock_resource.status = "running"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock EC2 client
+    mock_ec2 = MagicMock()
+    mock_get_client.return_value = mock_ec2
+    mock_ec2.describe_instances.return_value = {
+        "Reservations": [
+            {
+                "Instances": [
+                    {
+                        "InstanceId": external_id,
+                        "State": {"Name": "running"},
+                        "InstanceType": "t2.micro",
+                        "PublicIpAddress": "54.1.2.3",
+                        "PrivateIpAddress": "10.0.1.10",
+                    }
+                ]
+            }
+        ]
+    }
+
+    result = get_resource_status(resource_id, mock_session)
+
+    assert result.resource_id == resource_id
+    assert result.resource_type == "ec2_instance"
+    assert result.external_id == external_id
+    assert result.status == "running"
+    assert result.details["state"] == "running"
+    assert result.details["instance_type"] == "t2.micro"
+    assert result.details["public_ip"] == "54.1.2.3"
+
+    # Verify EC2 describe_instances was called
+    mock_ec2.describe_instances.assert_called_once_with(InstanceIds=[external_id])
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_get_resource_status_ecs_service(mock_get_client):
+    """Test getting status of an ECS service."""
+    resource_id = str(uuid.uuid4())
+    external_id = "arn:aws:ecs:us-east-1:123456789:service/my-cluster/my-service"
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ecs_service"
+    mock_resource.external_id = external_id
+    mock_resource.status = "active"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock ECS client
+    mock_ecs = MagicMock()
+    mock_get_client.return_value = mock_ecs
+    mock_ecs.describe_services.return_value = {
+        "services": [
+            {
+                "serviceArn": external_id,
+                "status": "ACTIVE",
+                "desiredCount": 2,
+                "runningCount": 2,
+            }
+        ]
+    }
+
+    result = get_resource_status(resource_id, mock_session)
+
+    assert result.resource_id == resource_id
+    assert result.resource_type == "ecs_service"
+    assert result.status == "active"
+    assert result.details["status"] == "ACTIVE"
+    assert result.details["desired_count"] == "2"
+    assert result.details["running_count"] == "2"
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_get_resource_status_ecs_cluster(mock_get_client):
+    """Test getting status of an ECS cluster."""
+    resource_id = str(uuid.uuid4())
+    external_id = "arn:aws:ecs:us-east-1:123456789:cluster/my-cluster"
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ecs_cluster"
+    mock_resource.external_id = external_id
+    mock_resource.status = "active"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock ECS client
+    mock_ecs = MagicMock()
+    mock_get_client.return_value = mock_ecs
+    mock_ecs.describe_clusters.return_value = {
+        "clusters": [
+            {
+                "clusterArn": external_id,
+                "status": "ACTIVE",
+                "activeServicesCount": 3,
+            }
+        ]
+    }
+
+    result = get_resource_status(resource_id, mock_session)
+
+    assert result.resource_type == "ecs_cluster"
+    assert result.status == "active"
+    assert result.details["status"] == "ACTIVE"
+    assert result.details["active_services"] == "3"
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_get_resource_status_ebs_volume(mock_get_client):
+    """Test getting status of an EBS volume."""
+    resource_id = str(uuid.uuid4())
+    external_id = "vol-12345"
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ebs_volume"
+    mock_resource.external_id = external_id
+    mock_resource.status = "available"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock EC2 client
+    mock_ec2 = MagicMock()
+    mock_get_client.return_value = mock_ec2
+    mock_ec2.describe_volumes.return_value = {
+        "Volumes": [
+            {
+                "VolumeId": external_id,
+                "State": "available",
+                "Size": 100,
+                "VolumeType": "gp3",
+            }
+        ]
+    }
+
+    result = get_resource_status(resource_id, mock_session)
+
+    assert result.resource_type == "ebs_volume"
+    assert result.status == "available"
+    assert result.details["state"] == "available"
+    assert result.details["size"] == "100"
+    assert result.details["volume_type"] == "gp3"
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_get_resource_status_vpc_resources(mock_get_client):
+    """Test getting status of VPC resources."""
+    # Test VPC
+    resource_id_vpc = str(uuid.uuid4())
+    mock_session = MagicMock()
+    mock_resource_vpc = MagicMock()
+    mock_resource_vpc.id = resource_id_vpc
+    mock_resource_vpc.resource_type = "vpc"
+    mock_resource_vpc.external_id = "vpc-12345"
+    mock_resource_vpc.status = "available"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource_vpc
+
+    mock_ec2 = MagicMock()
+    mock_get_client.return_value = mock_ec2
+    mock_ec2.describe_vpcs.return_value = {
+        "Vpcs": [
+            {
+                "VpcId": "vpc-12345",
+                "State": "available",
+                "CidrBlock": "10.0.0.0/16",
+            }
+        ]
+    }
+
+    result = get_resource_status(resource_id_vpc, mock_session)
+    assert result.status == "available"
+    assert result.details["cidr_block"] == "10.0.0.0/16"
+
+    # Test subnet
+    resource_id_subnet = str(uuid.uuid4())
+    mock_resource_subnet = MagicMock()
+    mock_resource_subnet.id = resource_id_subnet
+    mock_resource_subnet.resource_type = "subnet"
+    mock_resource_subnet.external_id = "subnet-12345"
+    mock_resource_subnet.status = "available"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource_subnet
+
+    mock_ec2.describe_subnets.return_value = {
+        "Subnets": [
+            {
+                "SubnetId": "subnet-12345",
+                "State": "available",
+                "CidrBlock": "10.0.1.0/24",
+            }
+        ]
+    }
+
+    result = get_resource_status(resource_id_subnet, mock_session)
+    assert result.status == "available"
+    assert result.details["cidr_block"] == "10.0.1.0/24"
+
+    # Test security group
+    resource_id_sg = str(uuid.uuid4())
+    mock_resource_sg = MagicMock()
+    mock_resource_sg.id = resource_id_sg
+    mock_resource_sg.resource_type = "security_group"
+    mock_resource_sg.external_id = "sg-12345"
+    mock_resource_sg.status = "available"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource_sg
+
+    mock_ec2.describe_security_groups.return_value = {
+        "SecurityGroups": [
+            {
+                "GroupId": "sg-12345",
+                "GroupName": "my-sg",
+                "VpcId": "vpc-12345",
+            }
+        ]
+    }
+
+    result = get_resource_status(resource_id_sg, mock_session)
+    assert result.status == "available"
+    assert result.details["group_name"] == "my-sg"
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_get_resource_status_updates_database(mock_get_client):
+    """Test that get_resource_status updates database when status changes."""
+    resource_id = str(uuid.uuid4())
+    external_id = "i-12345"
+
+    # Mock database session and resource with old status
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ec2_instance"
+    mock_resource.external_id = external_id
+    mock_resource.status = "pending"  # Old status
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock EC2 client with new status
+    mock_ec2 = MagicMock()
+    mock_get_client.return_value = mock_ec2
+    mock_ec2.describe_instances.return_value = {
+        "Reservations": [
+            {
+                "Instances": [
+                    {
+                        "InstanceId": external_id,
+                        "State": {"Name": "running"},  # New status
+                        "InstanceType": "t2.micro",
+                    }
+                ]
+            }
+        ]
+    }
+
+    result = get_resource_status(resource_id, mock_session)
+
+    assert result.status == "running"
+    # Verify database was updated
+    assert mock_resource.status == "running"
+    mock_session.commit.assert_called_once()
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_get_resource_status_resource_not_found_in_aws(mock_get_client):
+    """Test getting status when resource doesn't exist in AWS."""
+    resource_id = str(uuid.uuid4())
+    external_id = "i-12345"
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ec2_instance"
+    mock_resource.external_id = external_id
+    mock_resource.status = "running"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock EC2 client with empty response
+    mock_ec2 = MagicMock()
+    mock_get_client.return_value = mock_ec2
+    mock_ec2.describe_instances.return_value = {"Reservations": []}
+
+    result = get_resource_status(resource_id, mock_session)
+
+    # Should return terminated status
+    assert result.status == "terminated"
+
+
+def test_get_resource_status_not_found_in_database():
+    """Test getting status of a resource that doesn't exist in database."""
+    resource_id = str(uuid.uuid4())
+
+    # Mock database session with no resource found
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+    with pytest.raises(ValueError, match="Resource .* not found in database"):
+        get_resource_status(resource_id, mock_session)
+
+
+@patch("packages.provisioner.localstack_adapter._get_boto3_client")
+def test_get_resource_status_api_failure(mock_get_client):
+    """Test getting status when AWS API fails."""
+    resource_id = str(uuid.uuid4())
+
+    # Mock database session and resource
+    mock_session = MagicMock()
+    mock_resource = MagicMock()
+    mock_resource.id = resource_id
+    mock_resource.resource_type = "ec2_instance"
+    mock_resource.external_id = "i-12345"
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_resource
+
+    # Mock EC2 client to raise exception
+    mock_ec2 = MagicMock()
+    mock_get_client.return_value = mock_ec2
+    mock_ec2.describe_instances.side_effect = Exception("API error")
+
+    with pytest.raises(RuntimeError, match="Failed to get resource status"):
+        get_resource_status(resource_id, mock_session)
+
+    # Verify rollback was called
+    mock_session.rollback.assert_called_once()

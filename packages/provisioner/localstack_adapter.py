@@ -70,6 +70,17 @@ class ECSDeployment:
 
 
 @dataclass
+class ResourceState:
+    """Current state of a resource."""
+
+    resource_id: str
+    resource_type: str
+    external_id: str
+    status: str
+    details: dict[str, str] | None = None
+
+
+@dataclass
 class ComputeSpec:
     """Compute specifications."""
 
@@ -585,3 +596,385 @@ async def deploy_to_ecs(
     except Exception as e:
         db_session.rollback()
         raise RuntimeError(f"Failed to deploy to ECS: {e}") from e
+
+
+def start_resource(
+    resource_id: str,
+    db_session: Session,
+    endpoint_url: str = "http://localhost:4566",
+) -> ResourceState:
+    """Start a stopped resource.
+
+    Args:
+        resource_id: Database ID of the resource to start
+        db_session: Database session for querying and updating resources
+        endpoint_url: LocalStack endpoint URL
+
+    Returns:
+        ResourceState with updated status
+
+    Raises:
+        ValueError: If resource not found in database
+        RuntimeError: If AWS API call fails
+    """
+    # Query database to get resource type and external_id
+    resource = db_session.query(models.ResourceModel).filter_by(id=resource_id).first()
+    if not resource:
+        raise ValueError(f"Resource {resource_id} not found in database")
+
+    try:
+        if resource.resource_type == "ec2_instance":
+            # Start EC2 instance
+            ec2_client = _get_boto3_client("ec2", endpoint_url)
+            ec2_client.start_instances(InstanceIds=[resource.external_id])
+            new_status = "running"
+
+        elif resource.resource_type == "ecs_service":
+            # Update ECS service to desired count 1
+            ecs_client = _get_boto3_client("ecs", endpoint_url)
+            # Extract cluster name from service ARN or use a default
+            cluster_name = (
+                resource.external_id.split("/")[-2] if "/" in resource.external_id else "default"
+            )
+            ecs_client.update_service(
+                cluster=cluster_name,
+                service=resource.external_id,
+                desiredCount=1,
+            )
+            new_status = "running"
+
+        else:
+            raise ValueError(
+                f"Resource type {resource.resource_type} does not support start operation"
+            )
+
+        # Update resource status in database
+        resource.status = new_status
+        db_session.commit()
+
+        return ResourceState(
+            resource_id=resource.id,
+            resource_type=resource.resource_type,
+            external_id=resource.external_id,
+            status=new_status,
+        )
+
+    except Exception as e:
+        db_session.rollback()
+        raise RuntimeError(f"Failed to start resource {resource_id}: {e}") from e
+
+
+def stop_resource(
+    resource_id: str,
+    db_session: Session,
+    endpoint_url: str = "http://localhost:4566",
+) -> ResourceState:
+    """Stop a running resource.
+
+    Args:
+        resource_id: Database ID of the resource to stop
+        db_session: Database session for querying and updating resources
+        endpoint_url: LocalStack endpoint URL
+
+    Returns:
+        ResourceState with updated status
+
+    Raises:
+        ValueError: If resource not found in database
+        RuntimeError: If AWS API call fails
+    """
+    # Query database to get resource type and external_id
+    resource = db_session.query(models.ResourceModel).filter_by(id=resource_id).first()
+    if not resource:
+        raise ValueError(f"Resource {resource_id} not found in database")
+
+    try:
+        if resource.resource_type == "ec2_instance":
+            # Stop EC2 instance
+            ec2_client = _get_boto3_client("ec2", endpoint_url)
+            ec2_client.stop_instances(InstanceIds=[resource.external_id])
+            new_status = "stopped"
+
+        elif resource.resource_type == "ecs_service":
+            # Update ECS service to desired count 0
+            ecs_client = _get_boto3_client("ecs", endpoint_url)
+            cluster_name = (
+                resource.external_id.split("/")[-2] if "/" in resource.external_id else "default"
+            )
+            ecs_client.update_service(
+                cluster=cluster_name,
+                service=resource.external_id,
+                desiredCount=0,
+            )
+            new_status = "stopped"
+
+        else:
+            raise ValueError(
+                f"Resource type {resource.resource_type} does not support stop operation"
+            )
+
+        # Update resource status in database
+        resource.status = new_status
+        db_session.commit()
+
+        return ResourceState(
+            resource_id=resource.id,
+            resource_type=resource.resource_type,
+            external_id=resource.external_id,
+            status=new_status,
+        )
+
+    except Exception as e:
+        db_session.rollback()
+        raise RuntimeError(f"Failed to stop resource {resource_id}: {e}") from e
+
+
+def terminate_resource(
+    resource_id: str,
+    db_session: Session,
+    endpoint_url: str = "http://localhost:4566",
+) -> ResourceState:
+    """Terminate a resource.
+
+    Args:
+        resource_id: Database ID of the resource to terminate
+        db_session: Database session for querying and updating resources
+        endpoint_url: LocalStack endpoint URL
+
+    Returns:
+        ResourceState with updated status
+
+    Raises:
+        ValueError: If resource not found in database
+        RuntimeError: If AWS API call fails
+    """
+    # Query database to get resource type and external_id
+    resource = db_session.query(models.ResourceModel).filter_by(id=resource_id).first()
+    if not resource:
+        raise ValueError(f"Resource {resource_id} not found in database")
+
+    try:
+        if resource.resource_type == "ec2_instance":
+            # Terminate EC2 instance
+            ec2_client = _get_boto3_client("ec2", endpoint_url)
+            ec2_client.terminate_instances(InstanceIds=[resource.external_id])
+            new_status = "terminated"
+
+        elif resource.resource_type == "ecs_service":
+            # Delete ECS service
+            ecs_client = _get_boto3_client("ecs", endpoint_url)
+            cluster_name = (
+                resource.external_id.split("/")[-2] if "/" in resource.external_id else "default"
+            )
+            ecs_client.delete_service(
+                cluster=cluster_name,
+                service=resource.external_id,
+                force=True,
+            )
+            new_status = "terminated"
+
+        elif resource.resource_type == "ecs_cluster":
+            # Delete ECS cluster
+            ecs_client = _get_boto3_client("ecs", endpoint_url)
+            ecs_client.delete_cluster(cluster=resource.external_id)
+            new_status = "terminated"
+
+        elif resource.resource_type == "ebs_volume":
+            # Delete EBS volume
+            ec2_client = _get_boto3_client("ec2", endpoint_url)
+            ec2_client.delete_volume(VolumeId=resource.external_id)
+            new_status = "terminated"
+
+        elif resource.resource_type == "security_group":
+            # Delete security group
+            ec2_client = _get_boto3_client("ec2", endpoint_url)
+            ec2_client.delete_security_group(GroupId=resource.external_id)
+            new_status = "terminated"
+
+        elif resource.resource_type == "subnet":
+            # Delete subnet
+            ec2_client = _get_boto3_client("ec2", endpoint_url)
+            ec2_client.delete_subnet(SubnetId=resource.external_id)
+            new_status = "terminated"
+
+        elif resource.resource_type == "vpc":
+            # Delete VPC
+            ec2_client = _get_boto3_client("ec2", endpoint_url)
+            ec2_client.delete_vpc(VpcId=resource.external_id)
+            new_status = "terminated"
+
+        else:
+            raise ValueError(
+                f"Resource type {resource.resource_type} does not support terminate operation"
+            )
+
+        # Update resource status in database
+        resource.status = new_status
+        db_session.commit()
+
+        return ResourceState(
+            resource_id=resource.id,
+            resource_type=resource.resource_type,
+            external_id=resource.external_id,
+            status=new_status,
+        )
+
+    except Exception as e:
+        db_session.rollback()
+        raise RuntimeError(f"Failed to terminate resource {resource_id}: {e}") from e
+
+
+def get_resource_status(
+    resource_id: str,
+    db_session: Session,
+    endpoint_url: str = "http://localhost:4566",
+) -> ResourceState:
+    """Query current resource state from LocalStack.
+
+    Args:
+        resource_id: Database ID of the resource to query
+        db_session: Database session for querying and updating resources
+        endpoint_url: LocalStack endpoint URL
+
+    Returns:
+        ResourceState with current status
+
+    Raises:
+        ValueError: If resource not found in database
+        RuntimeError: If AWS API call fails
+    """
+    # Query database to get resource type and external_id
+    resource = db_session.query(models.ResourceModel).filter_by(id=resource_id).first()
+    if not resource:
+        raise ValueError(f"Resource {resource_id} not found in database")
+
+    try:
+        details = {}
+
+        if resource.resource_type == "ec2_instance":
+            # Query EC2 instance state
+            ec2_client = _get_boto3_client("ec2", endpoint_url)
+            response = ec2_client.describe_instances(InstanceIds=[resource.external_id])
+            if response["Reservations"] and response["Reservations"][0]["Instances"]:
+                instance = response["Reservations"][0]["Instances"][0]
+                current_status = instance["State"]["Name"]
+                details = {
+                    "state": current_status,
+                    "instance_type": instance.get("InstanceType", ""),
+                    "public_ip": instance.get("PublicIpAddress", ""),
+                    "private_ip": instance.get("PrivateIpAddress", ""),
+                }
+            else:
+                current_status = "terminated"
+
+        elif resource.resource_type == "ecs_service":
+            # Query ECS service status
+            ecs_client = _get_boto3_client("ecs", endpoint_url)
+            cluster_name = (
+                resource.external_id.split("/")[-2] if "/" in resource.external_id else "default"
+            )
+            response = ecs_client.describe_services(
+                cluster=cluster_name,
+                services=[resource.external_id],
+            )
+            if response["services"]:
+                service = response["services"][0]
+                current_status = service["status"].lower()
+                details = {
+                    "status": service["status"],
+                    "desired_count": str(service.get("desiredCount", 0)),
+                    "running_count": str(service.get("runningCount", 0)),
+                }
+            else:
+                current_status = "terminated"
+
+        elif resource.resource_type == "ecs_cluster":
+            # Query ECS cluster status
+            ecs_client = _get_boto3_client("ecs", endpoint_url)
+            response = ecs_client.describe_clusters(clusters=[resource.external_id])
+            if response["clusters"]:
+                cluster = response["clusters"][0]
+                current_status = cluster["status"].lower()
+                details = {
+                    "status": cluster["status"],
+                    "active_services": str(cluster.get("activeServicesCount", 0)),
+                }
+            else:
+                current_status = "terminated"
+
+        elif resource.resource_type == "ebs_volume":
+            # Query EBS volume state
+            ec2_client = _get_boto3_client("ec2", endpoint_url)
+            response = ec2_client.describe_volumes(VolumeIds=[resource.external_id])
+            if response["Volumes"]:
+                volume = response["Volumes"][0]
+                current_status = volume["State"]
+                details = {
+                    "state": volume["State"],
+                    "size": str(volume.get("Size", 0)),
+                    "volume_type": volume.get("VolumeType", ""),
+                }
+            else:
+                current_status = "terminated"
+
+        elif resource.resource_type == "vpc":
+            # Query VPC state
+            ec2_client = _get_boto3_client("ec2", endpoint_url)
+            response = ec2_client.describe_vpcs(VpcIds=[resource.external_id])
+            if response["Vpcs"]:
+                vpc = response["Vpcs"][0]
+                current_status = vpc["State"]
+                details = {
+                    "state": vpc["State"],
+                    "cidr_block": vpc.get("CidrBlock", ""),
+                }
+            else:
+                current_status = "terminated"
+
+        elif resource.resource_type == "subnet":
+            # Query subnet state
+            ec2_client = _get_boto3_client("ec2", endpoint_url)
+            response = ec2_client.describe_subnets(SubnetIds=[resource.external_id])
+            if response["Subnets"]:
+                subnet = response["Subnets"][0]
+                current_status = subnet["State"]
+                details = {
+                    "state": subnet["State"],
+                    "cidr_block": subnet.get("CidrBlock", ""),
+                }
+            else:
+                current_status = "terminated"
+
+        elif resource.resource_type == "security_group":
+            # Query security group state
+            ec2_client = _get_boto3_client("ec2", endpoint_url)
+            response = ec2_client.describe_security_groups(GroupIds=[resource.external_id])
+            if response["SecurityGroups"]:
+                sg = response["SecurityGroups"][0]
+                current_status = "available"
+                details = {
+                    "group_name": sg.get("GroupName", ""),
+                    "vpc_id": sg.get("VpcId", ""),
+                }
+            else:
+                current_status = "terminated"
+
+        else:
+            raise ValueError(f"Resource type {resource.resource_type} is not supported")
+
+        # Update resource status in database if changed
+        if resource.status != current_status:
+            resource.status = current_status
+            db_session.commit()
+
+        return ResourceState(
+            resource_id=resource.id,
+            resource_type=resource.resource_type,
+            external_id=resource.external_id,
+            status=current_status,
+            details=details,
+        )
+
+    except Exception as e:
+        db_session.rollback()
+        raise RuntimeError(f"Failed to get resource status for {resource_id}: {e}") from e

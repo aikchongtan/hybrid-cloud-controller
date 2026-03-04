@@ -45,11 +45,12 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
 
     # Register blueprints
     from packages.api.routes import auth as auth_routes
+    from packages.api.routes import configurations
 
     app.register_blueprint(auth_routes.bp)
+    app.register_blueprint(configurations.bp)
     # Additional routes will be added in future tasks:
-    # from packages.api.routes import configuration, tco, provisioning, qa, monitoring
-    # app.register_blueprint(configuration.bp)
+    # from packages.api.routes import tco, provisioning, qa, monitoring
     # app.register_blueprint(tco.bp)
     # app.register_blueprint(provisioning.bp)
     # app.register_blueprint(qa.bp)

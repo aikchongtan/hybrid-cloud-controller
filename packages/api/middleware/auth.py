@@ -8,12 +8,15 @@ from werkzeug.exceptions import Unauthorized
 logger = logging.getLogger("hybrid_cloud.api.middleware.auth")
 
 # Public endpoints that don't require authentication
-PUBLIC_ENDPOINTS = [
+PUBLIC_ENDPOINTS = {
     "/api/auth/login",
     "/api/auth/register",
+    "/api/configurations/validate",
     "/health",
-    "/",
-]
+}
+
+# Public endpoint prefixes (for paths like /health/*)
+PUBLIC_PREFIXES = ["/"]
 
 
 def authenticate_request() -> None:
@@ -72,19 +75,17 @@ def authenticate_request() -> None:
 
 def _is_public_endpoint(path: str) -> bool:
     """Check if the endpoint is public (doesn't require authentication)."""
-    return any(path.startswith(endpoint) for endpoint in PUBLIC_ENDPOINTS)
+    # Exact match for public endpoints
+    if path in PUBLIC_ENDPOINTS:
+        return True
+
+    # Check for prefix matches (for root path only)
+    return any(path == prefix for prefix in PUBLIC_PREFIXES)
 
 
 def _validate_session_token(token: str) -> dict[str, str] | None:
     """
     Validate session token and check timeout.
-
-    This is a placeholder implementation. The actual implementation will:
-    1. Query the database for the session by token
-    2. Check if session is_valid is True
-    3. Check if last_activity is within 30 minutes
-    4. Update last_activity timestamp
-    5. Return session data or None
 
     Args:
         token: Session token from Authorization header
@@ -92,29 +93,37 @@ def _validate_session_token(token: str) -> dict[str, str] | None:
     Returns:
         Session data dict with user_id and session_id, or None if invalid
     """
-    # TODO: Implement actual database query in future task
-    # from packages.database import models
-    # from packages.security import auth as auth_service
-    #
-    # session = auth_service.validate_session(token)
-    # if not session:
-    #     return None
-    #
-    # # Check timeout (30 minutes)
-    # timeout_minutes = current_app.config.get("SESSION_TIMEOUT_MINUTES", 30)
-    # timeout_threshold = datetime.utcnow() - timedelta(minutes=timeout_minutes)
-    # if session.last_activity < timeout_threshold:
-    #     auth_service.invalidate_session(token)
-    #     return None
-    #
-    # # Update last_activity
-    # auth_service.update_session_activity(token)
-    #
-    # return {
-    #     "user_id": session.user_id,
-    #     "session_id": session.id
-    # }
+    from datetime import datetime, timedelta
 
-    # Placeholder: return None to indicate authentication not yet implemented
-    logger.warning("Session validation not yet implemented - using placeholder")
-    return None
+    from flask import current_app
+
+    from packages.database import get_session
+    from packages.security import auth as auth_service
+
+    try:
+        db = get_session()
+        try:
+            # Validate session
+            session = auth_service.validate_session(db, token)
+            if not session:
+                return None
+
+            # Check timeout (30 minutes)
+            timeout_minutes = current_app.config.get("SESSION_TIMEOUT_MINUTES", 30)
+            timeout_threshold = datetime.utcnow() - timedelta(minutes=timeout_minutes)
+            if session.last_activity < timeout_threshold:
+                auth_service.invalidate_session(db, token)
+                return None
+
+            # Update last_activity
+            session.last_activity = datetime.utcnow()
+            db.commit()
+
+            return {"user_id": session.user_id, "session_id": session.id}
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Error validating session token: {e}")
+        return None

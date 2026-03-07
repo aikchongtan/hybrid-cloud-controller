@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from packages.database.models import ConversationModel
 
 
-async def add_message(
+def add_message(
     db_session: Session,
     session_id: str,
     role: str,
@@ -47,7 +47,7 @@ async def add_message(
     db_session.commit()
 
 
-async def get_history(db_session: Session, session_id: str) -> list[dict[str, str]]:
+def get_history(db_session: Session, session_id: str) -> list[dict[str, str]]:
     """Get conversation history for a session.
 
     Args:
@@ -79,7 +79,7 @@ async def get_history(db_session: Session, session_id: str) -> list[dict[str, st
     ]
 
 
-async def clear_history(db_session: Session, session_id: str) -> None:
+def clear_history(db_session: Session, session_id: str) -> None:
     """Clear conversation history for a session.
 
     Args:

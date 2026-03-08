@@ -1,0 +1,724 @@
+{% extends "base.html" %}
+
+{% block title %}Provisioning - Hybrid Cloud Controller{% endblock %}
+
+{% block extra_head %}
+<style>
+    .cloud-path-card {
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        cursor: pointer;
+        border: 3px solid transparent;
+        height: 100%;
+    }
+    
+    .cloud-path-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+    }
+    
+    .cloud-path-card.selected {
+        border-color: #3273dc;
+        background-color: #f0f7ff;
+    }
+    
+    .cloud-path-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+    }
+    
+    .aws-icon { color: #FF9900; }
+    .iaas-icon { color: #667eea; }
+    .caas-icon { color: #48c774; }
+    
+    .step-indicator {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+        position: relative;
+    }
+    
+    .step {
+        flex: 1;
+        text-align: center;
+        position: relative;
+    }
+    
+    .step-number {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background-color: #dbdbdb;
+        color: white;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+    }
+    
+    .step.active .step-number {
+        background-color: #3273dc;
+    }
+    
+    .step.completed .step-number {
+        background-color: #48c774;
+    }
+    
+    .step-line {
+        position: absolute;
+        top: 20px;
+        left: 50%;
+        width: 100%;
+        height: 2px;
+        background-color: #dbdbdb;
+        z-index: -1;
+    }
+    
+    .step:last-child .step-line {
+        display: none;
+    }
+    
+    .provisioning-section {
+        display: none;
+    }
+    
+    .provisioning-section.active {
+        display: block;
+    }
+    
+    .log-container {
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+        padding: 1rem;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.875rem;
+        max-height: 400px;
+        overflow-y: auto;
+        margin-top: 1rem;
+    }
+    
+    .log-entry {
+        margin-bottom: 0.25rem;
+        line-height: 1.5;
+    }
+    
+    .log-entry.success { color: #4ec9b0; }
+    .log-entry.error { color: #f48771; }
+    .log-entry.warning { color: #dcdcaa; }
+    
+    .resource-card {
+        background-color: #f5f5f5;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .connection-info {
+        background-color: #363636;
+        color: #f5f5f5;
+        padding: 1rem;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.875rem;
+    }
+    
+    .modal-card {
+        max-width: 500px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero is-primary">
+    <div class="hero-body">
+        <p class="title">
+            <span class="icon"><i class="fas fa-rocket"></i></span>
+            Resource Provisioning
+        </p>
+        <p class="subtitle">
+            Select your cloud path and provision infrastructure
+        </p>
+    </div>
+</div>
+
+<!-- Step Indicator -->
+<div class="step-indicator mt-5">
+    <div class="step active" id="step1">
+        <div class="step-number">1</div>
+        <div class="step-label">Select Cloud Path</div>
+        <div class="step-line"></div>
+    </div>
+    <div class="step" id="step2">
+        <div class="step-number">2</div>
+        <div class="step-label">Configure</div>
+        <div class="step-line"></div>
+    </div>
+    <div class="step" id="step3">
+        <div class="step-number">3</div>
+        <div class="step-label">Provision</div>
+        <div class="step-line"></div>
+    </div>
+    <div class="step" id="step4">
+        <div class="step-number">4</div>
+        <div class="step-label">Deploy</div>
+    </div>
+</div>
+
+<!-- Section 1: Cloud Path Selection -->
+<div id="section-cloud-path" class="provisioning-section active">
+    <h2 class="title is-4 mb-4">Choose Your Cloud Path</h2>
+    
+    <div class="columns">
+        <div class="column">
+            <div class="cloud-path-card box" data-path="aws" onclick="selectCloudPath('aws')">
+                <div class="has-text-centered">
+                    <div class="cloud-path-icon aws-icon">
+                        <i class="fab fa-aws"></i>
+                    </div>
+                    <h3 class="title is-5">AWS Cloud</h3>
+                    <p class="subtitle is-6">Deploy to AWS using LocalStack emulation</p>
+                    <ul class="has-text-left mt-4">
+                        <li><i class="fas fa-check has-text-success"></i> EC2 instances</li>
+                        <li><i class="fas fa-check has-text-success"></i> EBS storage</li>
+                        <li><i class="fas fa-check has-text-success"></i> Container deployment (ECS)</li>
+                        <li><i class="fas fa-check has-text-success"></i> Managed networking</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <div class="column">
+            <div class="cloud-path-card box" data-path="on_prem_iaas" onclick="selectCloudPath('on_prem_iaas')">
+                <div class="has-text-centered">
+                    <div class="cloud-path-icon iaas-icon">
+                        <i class="fas fa-server"></i>
+                    </div>
+                    <h3 class="title is-5">On-Premises IaaS</h3>
+                    <p class="subtitle is-6">Virtual machines on your infrastructure</p>
+                    <ul class="has-text-left mt-4">
+                        <li><i class="fas fa-check has-text-success"></i> QEMU/KVM VMs</li>
+                        <li><i class="fas fa-check has-text-success"></i> Full control</li>
+                        <li><i class="fas fa-check has-text-success"></i> SSH access</li>
+                        <li><i class="fas fa-check has-text-success"></i> Mock mode available</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <div class="column">
+            <div class="cloud-path-card box" data-path="on_prem_caas" onclick="selectCloudPath('on_prem_caas')">
+                <div class="has-text-centered">
+                    <div class="cloud-path-icon caas-icon">
+                        <i class="fab fa-docker"></i>
+                    </div>
+                    <h3 class="title is-5">On-Premises CaaS</h3>
+                    <p class="subtitle is-6">Container-based deployment</p>
+                    <ul class="has-text-left mt-4">
+                        <li><i class="fas fa-check has-text-success"></i> Docker/Podman</li>
+                        <li><i class="fas fa-check has-text-success"></i> Fast deployment</li>
+                        <li><i class="fas fa-check has-text-success"></i> Resource efficient</li>
+                        <li><i class="fas fa-check has-text-success"></i> Easy scaling</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="buttons is-centered mt-5">
+        <button id="continueButton" class="button is-primary is-large" disabled onclick="continueToConfiguration()">
+            <span>Continue</span>
+            <span class="icon"><i class="fas fa-arrow-right"></i></span>
+        </button>
+    </div>
+</div>
+
+<!-- Section 2: Configuration -->
+<div id="section-configuration" class="provisioning-section">
+    <h2 class="title is-4 mb-4">Configuration</h2>
+    
+    <div class="box">
+        <div id="aws-config" style="display: none;">
+            <h3 class="title is-5">AWS Deployment Configuration</h3>
+            <p class="mb-4">Your infrastructure will be provisioned using LocalStack for AWS emulation.</p>
+            
+            <div class="field">
+                <label class="label">Container Image URL</label>
+                <div class="control has-icons-left">
+                    <input class="input" type="text" id="aws-container-image" 
+                           placeholder="e.g., nginx:latest or 123456789.dkr.ecr.us-east-1.amazonaws.com/app:v1">
+                    <span class="icon is-small is-left">
+                        <i class="fab fa-docker"></i>
+                    </span>
+                </div>
+                <p class="help">Supports Docker Hub, ECR, and private registries</p>
+            </div>
+            
+            <div class="field">
+                <label class="label">Environment Variables (Optional)</label>
+                <div class="control">
+                    <textarea class="textarea" id="aws-env-vars" rows="4" 
+                              placeholder='{"KEY1": "value1", "KEY2": "value2"}'></textarea>
+                </div>
+                <p class="help">JSON format for environment variables</p>
+            </div>
+        </div>
+        
+        <div id="iaas-config" style="display: none;">
+            <h3 class="title is-5">IaaS Configuration</h3>
+            <p class="mb-4">Virtual machines will be provisioned on your infrastructure.</p>
+            
+            <div class="field">
+                <label class="checkbox">
+                    <input type="checkbox" id="iaas-mock-mode" checked>
+                    Use Mock Mode (development - no real VMs created)
+                </label>
+                <p class="help">Uncheck to provision real QEMU/KVM virtual machines</p>
+            </div>
+            
+            <div class="notification is-info is-light mt-4">
+                <p><strong>Note:</strong> After provisioning, you'll receive SSH connection details for manual application deployment.</p>
+            </div>
+        </div>
+        
+        <div id="caas-config" style="display: none;">
+            <h3 class="title is-5">CaaS Configuration</h3>
+            <p class="mb-4">Containers will be deployed using Docker/Podman.</p>
+            
+            <div class="field">
+                <label class="label">Container Image URL</label>
+                <div class="control has-icons-left">
+                    <input class="input" type="text" id="caas-container-image" 
+                           placeholder="e.g., nginx:latest or registry.example.com/app:v1">
+                    <span class="icon is-small is-left">
+                        <i class="fab fa-docker"></i>
+                    </span>
+                </div>
+                <p class="help">Supports Docker Hub and private registries</p>
+            </div>
+            
+            <div class="field">
+                <label class="label">Environment Variables (Optional)</label>
+                <div class="control">
+                    <textarea class="textarea" id="caas-env-vars" rows="4" 
+                              placeholder='{"KEY1": "value1", "KEY2": "value2"}'></textarea>
+                </div>
+                <p class="help">JSON format for environment variables</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="buttons is-centered mt-5">
+        <button class="button is-light is-large" onclick="backToCloudPath()">
+            <span class="icon"><i class="fas fa-arrow-left"></i></span>
+            <span>Back</span>
+        </button>
+        <button class="button is-primary is-large" onclick="startProvisioning()">
+            <span>Start Provisioning</span>
+            <span class="icon"><i class="fas fa-rocket"></i></span>
+        </button>
+    </div>
+</div>
+
+<!-- Section 3: Provisioning -->
+<div id="section-provisioning" class="provisioning-section">
+    <h2 class="title is-4 mb-4">Provisioning Resources</h2>
+    
+    <div class="box">
+        <div class="has-text-centered mb-4">
+            <span class="icon is-large has-text-primary">
+                <i class="fas fa-spinner fa-pulse fa-3x"></i>
+            </span>
+            <p class="title is-5 mt-3">Provisioning in progress...</p>
+            <p class="subtitle is-6">This may take a few moments</p>
+        </div>
+        
+        <div class="log-container" id="provisioning-logs">
+            <div class="log-entry">Initializing provisioning...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Section 4: Results -->
+<div id="section-results" class="provisioning-section">
+    <h2 class="title is-4 mb-4">Provisioning Complete</h2>
+    
+    <div class="notification is-success">
+        <p class="title is-5">
+            <span class="icon"><i class="fas fa-check-circle"></i></span>
+            Resources provisioned successfully!
+        </p>
+    </div>
+    
+    <div id="resources-container"></div>
+    
+    <div class="buttons is-centered mt-5">
+        <a href="{{ url_for('index') }}" class="button is-light is-large">
+            <span class="icon"><i class="fas fa-home"></i></span>
+            <span>Back to Home</span>
+        </a>
+        <a href="#" class="button is-primary is-large" onclick="goToMonitoring()">
+            <span>View Monitoring Dashboard</span>
+            <span class="icon"><i class="fas fa-chart-line"></i></span>
+        </a>
+    </div>
+</div>
+
+<!-- AWS Confirmation Modal -->
+<div id="aws-modal" class="modal">
+    <div class="modal-background" onclick="closeAwsModal()"></div>
+    <div class="modal-card">
+        <header class="modal-card-head">
+            <p class="modal-card-title">Confirm AWS Provisioning</p>
+            <button class="delete" aria-label="close" onclick="closeAwsModal()"></button>
+        </header>
+        <section class="modal-card-body">
+            <p class="mb-4">You are about to provision resources on AWS using LocalStack emulation.</p>
+            <div class="notification is-warning is-light">
+                <p><strong>Note:</strong> This will create emulated AWS resources locally. No actual AWS charges will be incurred.</p>
+            </div>
+            <p>Do you want to proceed?</p>
+        </section>
+        <footer class="modal-card-foot">
+            <button class="button is-primary" onclick="confirmAwsProvisioning()">Confirm</button>
+            <button class="button" onclick="closeAwsModal()">Cancel</button>
+        </footer>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let selectedCloudPath = null;
+    let provisionId = null;
+    const configId = '{{ config_id }}';
+    const token = '{{ session.get("token", "") }}';
+    
+    function selectCloudPath(path) {
+        selectedCloudPath = path;
+        
+        // Update UI
+        document.querySelectorAll('.cloud-path-card').forEach(card => {
+            card.classList.remove('selected');
+        });
+        document.querySelector(`[data-path="${path}"]`).classList.add('selected');
+        
+        // Enable continue button
+        document.getElementById('continueButton').disabled = false;
+    }
+    
+    function continueToConfiguration() {
+        if (!selectedCloudPath) return;
+        
+        // Show AWS confirmation modal for AWS path
+        if (selectedCloudPath === 'aws') {
+            document.getElementById('aws-modal').classList.add('is-active');
+            return;
+        }
+        
+        showConfigurationSection();
+    }
+    
+    function closeAwsModal() {
+        document.getElementById('aws-modal').classList.remove('is-active');
+    }
+    
+    function confirmAwsProvisioning() {
+        closeAwsModal();
+        showConfigurationSection();
+    }
+    
+    function showConfigurationSection() {
+        // Update steps
+        document.getElementById('step1').classList.add('completed');
+        document.getElementById('step1').classList.remove('active');
+        document.getElementById('step2').classList.add('active');
+        
+        // Show configuration section
+        document.getElementById('section-cloud-path').classList.remove('active');
+        document.getElementById('section-configuration').classList.add('active');
+        
+        // Show appropriate config form
+        document.getElementById('aws-config').style.display = selectedCloudPath === 'aws' ? 'block' : 'none';
+        document.getElementById('iaas-config').style.display = selectedCloudPath === 'on_prem_iaas' ? 'block' : 'none';
+        document.getElementById('caas-config').style.display = selectedCloudPath === 'on_prem_caas' ? 'block' : 'none';
+    }
+    
+    function backToCloudPath() {
+        // Update steps
+        document.getElementById('step1').classList.remove('completed');
+        document.getElementById('step1').classList.add('active');
+        document.getElementById('step2').classList.remove('active');
+        
+        // Show cloud path section
+        document.getElementById('section-configuration').classList.remove('active');
+        document.getElementById('section-cloud-path').classList.add('active');
+    }
+    
+    async function startProvisioning() {
+        // Validate inputs
+        let containerImage = null;
+        let environmentVars = {};
+        let mockMode = true;
+        
+        if (selectedCloudPath === 'aws') {
+            containerImage = document.getElementById('aws-container-image').value.trim();
+            if (!containerImage) {
+                alert('Please enter a container image URL for AWS deployment');
+                return;
+            }
+            
+            const envVarsText = document.getElementById('aws-env-vars').value.trim();
+            if (envVarsText) {
+                try {
+                    environmentVars = JSON.parse(envVarsText);
+                } catch (e) {
+                    alert('Invalid JSON format for environment variables');
+                    return;
+                }
+            }
+        } else if (selectedCloudPath === 'on_prem_caas') {
+            containerImage = document.getElementById('caas-container-image').value.trim();
+            if (!containerImage) {
+                alert('Please enter a container image URL for CaaS deployment');
+                return;
+            }
+            
+            const envVarsText = document.getElementById('caas-env-vars').value.trim();
+            if (envVarsText) {
+                try {
+                    environmentVars = JSON.parse(envVarsText);
+                } catch (e) {
+                    alert('Invalid JSON format for environment variables');
+                    return;
+                }
+            }
+        } else if (selectedCloudPath === 'on_prem_iaas') {
+            mockMode = document.getElementById('iaas-mock-mode').checked;
+        }
+        
+        // Update steps
+        document.getElementById('step2').classList.add('completed');
+        document.getElementById('step2').classList.remove('active');
+        document.getElementById('step3').classList.add('active');
+        
+        // Show provisioning section
+        document.getElementById('section-configuration').classList.remove('active');
+        document.getElementById('section-provisioning').classList.add('active');
+        
+        // Start provisioning
+        addLog('Sending provisioning request...');
+        
+        try {
+            const requestBody = {
+                configuration_id: configId,
+                cloud_path: selectedCloudPath,
+                mock_mode: mockMode
+            };
+            
+            if (containerImage) {
+                requestBody.container_image = containerImage;
+            }
+            
+            if (Object.keys(environmentVars).length > 0) {
+                requestBody.environment_vars = environmentVars;
+            }
+            
+            const response = await fetch('http://localhost:8000/api/provision', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Provisioning failed');
+            }
+            
+            const data = await response.json();
+            provisionId = data.provision_id;
+            
+            addLog(`Provisioning initiated (ID: ${provisionId})`, 'success');
+            addLog(`Cloud path: ${selectedCloudPath}`);
+            addLog(`Creating resources...`);
+            
+            // Poll for status
+            await pollProvisioningStatus();
+            
+        } catch (error) {
+            addLog(`Error: ${error.message}`, 'error');
+            setTimeout(() => {
+                alert(`Provisioning failed: ${error.message}`);
+                backToCloudPath();
+            }, 2000);
+        }
+    }
+    
+    async function pollProvisioningStatus() {
+        const maxAttempts = 30;
+        let attempts = 0;
+        
+        const poll = async () => {
+            attempts++;
+            
+            try {
+                const response = await fetch(`http://localhost:8000/api/provision/${provisionId}/status`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to get provisioning status');
+                }
+                
+                const data = await response.json();
+                
+                if (data.status === 'completed') {
+                    addLog('Provisioning completed successfully!', 'success');
+                    addLog(`Created ${data.resources.length} resource(s)`);
+                    
+                    // Update steps
+                    document.getElementById('step3').classList.add('completed');
+                    document.getElementById('step3').classList.remove('active');
+                    document.getElementById('step4').classList.add('active');
+                    
+                    // Show results
+                    displayResults(data);
+                    return;
+                } else if (data.status === 'failed') {
+                    addLog('Provisioning failed', 'error');
+                    throw new Error('Provisioning failed');
+                } else if (data.status === 'provisioning') {
+                    addLog(`Status: ${data.status}...`);
+                    
+                    if (attempts < maxAttempts) {
+                        setTimeout(poll, 2000);
+                    } else {
+                        throw new Error('Provisioning timeout');
+                    }
+                }
+            } catch (error) {
+                addLog(`Error: ${error.message}`, 'error');
+                setTimeout(() => {
+                    alert(`Failed to check provisioning status: ${error.message}`);
+                }, 2000);
+            }
+        };
+        
+        poll();
+    }
+    
+    function displayResults(data) {
+        // Hide provisioning section
+        document.getElementById('section-provisioning').classList.remove('active');
+        document.getElementById('section-results').classList.add('active');
+        
+        const container = document.getElementById('resources-container');
+        container.innerHTML = '';
+        
+        // Display resources
+        data.resources.forEach((resource, index) => {
+            const resourceCard = document.createElement('div');
+            resourceCard.className = 'resource-card';
+            
+            let content = `
+                <h3 class="title is-5">
+                    <span class="icon"><i class="fas fa-${getResourceIcon(resource.resource_type)}"></i></span>
+                    ${resource.resource_type.toUpperCase()} Resource ${index + 1}
+                </h3>
+                <p><strong>ID:</strong> ${resource.external_id}</p>
+                <p><strong>Status:</strong> <span class="tag is-success">${resource.status}</span></p>
+            `;
+            
+            // Display connection info
+            if (resource.connection_info && Object.keys(resource.connection_info).length > 0) {
+                content += '<div class="mt-3"><strong>Connection Information:</strong></div>';
+                content += '<div class="connection-info mt-2">';
+                
+                if (resource.resource_type === 'vm') {
+                    // SSH connection details for IaaS
+                    const info = resource.connection_info;
+                    content += `<div>IP Address: ${info.ip_address || 'N/A'}</div>`;
+                    content += `<div>Port: ${info.port || '22'}</div>`;
+                    content += `<div>Username: ${info.username || 'N/A'}</div>`;
+                    content += `<div class="mt-2">SSH Command:</div>`;
+                    content += `<div>ssh ${info.username}@${info.ip_address} -p ${info.port}</div>`;
+                } else if (resource.resource_type === 'container') {
+                    // Container endpoint for CaaS
+                    const info = resource.connection_info;
+                    content += `<div>Endpoint: ${info.endpoint || 'N/A'}</div>`;
+                    content += `<div>Container ID: ${info.container_id || 'N/A'}</div>`;
+                } else {
+                    // Generic connection info
+                    for (const [key, value] of Object.entries(resource.connection_info)) {
+                        content += `<div>${key}: ${value}</div>`;
+                    }
+                }
+                
+                content += '</div>';
+            }
+            
+            resourceCard.innerHTML = content;
+            container.appendChild(resourceCard);
+        });
+        
+        // Add deployment logs section
+        if (selectedCloudPath !== 'on_prem_iaas') {
+            const logsCard = document.createElement('div');
+            logsCard.className = 'box mt-4';
+            logsCard.innerHTML = `
+                <h3 class="title is-5">Deployment Logs</h3>
+                <div class="log-container" id="deployment-logs">
+                    <div class="log-entry success">Deployment completed successfully</div>
+                    <div class="log-entry">Resources are ready for use</div>
+                </div>
+            `;
+            container.appendChild(logsCard);
+        }
+    }
+    
+    function getResourceIcon(resourceType) {
+        const icons = {
+            'ec2': 'server',
+            'ebs': 'hdd',
+            'vpc': 'network-wired',
+            'vm': 'desktop',
+            'container': 'box'
+        };
+        return icons[resourceType] || 'cube';
+    }
+    
+    function addLog(message, type = 'info') {
+        const logsContainer = document.getElementById('provisioning-logs');
+        const logEntry = document.createElement('div');
+        logEntry.className = `log-entry ${type}`;
+        
+        const timestamp = new Date().toLocaleTimeString();
+        logEntry.textContent = `[${timestamp}] ${message}`;
+        
+        logsContainer.appendChild(logEntry);
+        logsContainer.scrollTop = logsContainer.scrollHeight;
+    }
+    
+    function goToMonitoring() {
+        alert('Monitoring dashboard coming soon!');
+    }
+    
+    // Auto-dismiss notifications
+    document.addEventListener('DOMContentLoaded', function() {
+        const deleteButtons = document.querySelectorAll('.notification .delete');
+        deleteButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                this.parentElement.remove();
+            });
+        });
+    });
+</script>
+{% endblock %}

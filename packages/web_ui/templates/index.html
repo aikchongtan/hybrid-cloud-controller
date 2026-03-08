@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Hybrid Cloud Controller{% endblock %}
+
+{% block content %}
+<div class="hero is-info">
+    <div class="hero-body">
+        <p class="title">
+            Welcome to Hybrid Cloud Controller
+        </p>
+        <p class="subtitle">
+            Compare Total Cost of Ownership between on-premises and AWS cloud hosting
+        </p>
+    </div>
+</div>
+
+<div class="columns mt-5">
+    <div class="column">
+        <div class="card">
+            <div class="card-content">
+                <div class="media">
+                    <div class="media-left">
+                        <span class="icon is-large has-text-info">
+                            <i class="fas fa-3x fa-calculator"></i>
+                        </span>
+                    </div>
+                    <div class="media-content">
+                        <p class="title is-4">TCO Analysis</p>
+                        <p class="subtitle is-6">Calculate and compare costs</p>
+                    </div>
+                </div>
+                <div class="content">
+                    Input your application configuration and workload information to receive a comprehensive TCO comparison between on-premises and AWS cloud options.
+                    <br>
+                    <a href="{{ url_for('configuration.configuration_input') }}" class="button is-info mt-3">Start Analysis</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="column">
+        <div class="card">
+            <div class="card-content">
+                <div class="media">
+                    <div class="media-left">
+                        <span class="icon is-large has-text-success">
+                            <i class="fas fa-3x fa-cloud"></i>
+                        </span>
+                    </div>
+                    <div class="media-content">
+                        <p class="title is-4">Provisioning</p>
+                        <p class="subtitle is-6">Deploy your infrastructure</p>
+                    </div>
+                </div>
+                <div class="content">
+                    Select your preferred cloud path and provision resources automatically. Supports AWS (via LocalStack), IaaS, and CaaS deployments.
+                    <br>
+                    <a href="#" class="button is-success mt-3">Provision Resources</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="column">
+        <div class="card">
+            <div class="card-content">
+                <div class="media">
+                    <div class="media-left">
+                        <span class="icon is-large has-text-warning">
+                            <i class="fas fa-3x fa-chart-line"></i>
+                        </span>
+                    </div>
+                    <div class="media-content">
+                        <p class="title is-4">Monitoring</p>
+                        <p class="subtitle is-6">Track performance metrics</p>
+                    </div>
+                </div>
+                <div class="content">
+                    Monitor your provisioned application's operational statistics including CPU, memory, storage, and network utilization.
+                    <br>
+                    <a href="#" class="button is-warning mt-3">View Dashboard</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="box mt-5">
+    <article class="media">
+        <div class="media-left">
+            <span class="icon is-large has-text-primary">
+                <i class="fas fa-2x fa-comments"></i>
+            </span>
+        </div>
+        <div class="media-content">
+            <div class="content">
+                <p>
+                    <strong>Q&A Service</strong>
+                    <br>
+                    Have questions about your TCO analysis? Our conversational Q&A service can help you understand cost factors, compare specific aspects, and get recommendations based on your workload profile.
+                </p>
+            </div>
+        </div>
+    </article>
+</div>
+{% endblock %}

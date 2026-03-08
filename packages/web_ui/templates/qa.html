@@ -1,0 +1,501 @@
+{% extends "base.html" %}
+
+{% block title %}Q&A Assistant - Hybrid Cloud Controller{% endblock %}
+
+{% block extra_head %}
+<style>
+    .chat-container {
+        display: flex;
+        flex-direction: column;
+        height: 70vh;
+        background-color: #f5f5f5;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+    
+    .chat-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1.5rem;
+        text-align: center;
+    }
+    
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .message {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        animation: fadeIn 0.3s ease-in;
+    }
+    
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    .message.user {
+        flex-direction: row-reverse;
+    }
+    
+    .message-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 1.2rem;
+    }
+    
+    .message.user .message-avatar {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    
+    .message.assistant .message-avatar {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+    }
+    
+    .message-content {
+        max-width: 70%;
+        padding: 1rem 1.25rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        word-wrap: break-word;
+    }
+    
+    .message.user .message-content {
+        background-color: #667eea;
+        color: white;
+        border-bottom-right-radius: 4px;
+    }
+    
+    .message.assistant .message-content {
+        background-color: white;
+        color: #363636;
+        border-bottom-left-radius: 4px;
+    }
+    
+    .message-timestamp {
+        font-size: 0.75rem;
+        opacity: 0.7;
+        margin-top: 0.25rem;
+    }
+    
+    .chat-input-container {
+        padding: 1.5rem;
+        background-color: white;
+        border-top: 1px solid #dbdbdb;
+    }
+    
+    .chat-input-wrapper {
+        display: flex;
+        gap: 0.75rem;
+        align-items: flex-end;
+    }
+    
+    .chat-input-wrapper textarea {
+        flex: 1;
+        resize: none;
+        min-height: 50px;
+        max-height: 150px;
+    }
+    
+    .loading-indicator {
+        display: none;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        background-color: white;
+        border-radius: 12px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        max-width: 70%;
+    }
+    
+    .loading-indicator.active {
+        display: flex;
+    }
+    
+    .loading-dots {
+        display: flex;
+        gap: 0.25rem;
+    }
+    
+    .loading-dots span {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: #667eea;
+        animation: bounce 1.4s infinite ease-in-out both;
+    }
+    
+    .loading-dots span:nth-child(1) {
+        animation-delay: -0.32s;
+    }
+    
+    .loading-dots span:nth-child(2) {
+        animation-delay: -0.16s;
+    }
+    
+    @keyframes bounce {
+        0%, 80%, 100% {
+            transform: scale(0);
+        }
+        40% {
+            transform: scale(1);
+        }
+    }
+    
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: #7a7a7a;
+        text-align: center;
+        padding: 2rem;
+    }
+    
+    .empty-state-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        opacity: 0.3;
+    }
+    
+    .suggestion-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 1rem;
+    }
+    
+    .suggestion-chip {
+        padding: 0.5rem 1rem;
+        background-color: white;
+        border: 1px solid #dbdbdb;
+        border-radius: 20px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 0.875rem;
+    }
+    
+    .suggestion-chip:hover {
+        background-color: #667eea;
+        color: white;
+        border-color: #667eea;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="columns">
+    <div class="column is-8 is-offset-2">
+        <div class="box" style="padding: 0;">
+            <div class="chat-container">
+                <!-- Chat Header -->
+                <div class="chat-header">
+                    <h1 class="title is-4 has-text-white mb-2">
+                        <span class="icon"><i class="fas fa-comments"></i></span>
+                        TCO Analysis Assistant
+                    </h1>
+                    <p class="subtitle is-6 has-text-white mb-0">
+                        Ask questions about your cost analysis
+                    </p>
+                </div>
+                
+                <!-- Chat Messages -->
+                <div class="chat-messages" id="chatMessages">
+                    <!-- Empty state (shown when no messages) -->
+                    <div class="empty-state" id="emptyState">
+                        <div class="empty-state-icon">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <p class="is-size-5 has-text-weight-semibold mb-2">Start a conversation</p>
+                        <p class="mb-3">Ask me anything about your TCO analysis</p>
+                        
+                        <div class="suggestion-chips">
+                            <button class="suggestion-chip" onclick="askSuggestion('Why is AWS cheaper than on-premises?')">
+                                Why is AWS cheaper?
+                            </button>
+                            <button class="suggestion-chip" onclick="askSuggestion('What are the main cost drivers?')">
+                                Main cost drivers?
+                            </button>
+                            <button class="suggestion-chip" onclick="askSuggestion('How can I reduce costs?')">
+                                Reduce costs?
+                            </button>
+                            <button class="suggestion-chip" onclick="askSuggestion('Compare storage costs')">
+                                Compare storage
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Messages will be dynamically added here -->
+                    
+                    <!-- Loading indicator -->
+                    <div class="message assistant">
+                        <div class="message-avatar">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <div class="loading-indicator" id="loadingIndicator">
+                            <div class="loading-dots">
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                            </div>
+                            <span>Thinking...</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Chat Input -->
+                <div class="chat-input-container">
+                    <form id="chatForm" onsubmit="sendMessage(event)">
+                        <div class="chat-input-wrapper">
+                            <div class="control is-expanded">
+                                <textarea 
+                                    class="textarea" 
+                                    id="questionInput" 
+                                    placeholder="Ask a question about your TCO analysis..."
+                                    rows="1"
+                                    required></textarea>
+                            </div>
+                            <div class="control">
+                                <button type="submit" class="button is-primary is-medium" id="sendButton">
+                                    <span class="icon">
+                                        <i class="fas fa-paper-plane"></i>
+                                    </span>
+                                    <span>Send</span>
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Back to Results Button -->
+        <div class="has-text-centered mt-4">
+            <a href="{{ url_for('configuration.tco_results', config_id=config_id) }}" class="button is-light">
+                <span class="icon"><i class="fas fa-arrow-left"></i></span>
+                <span>Back to TCO Results</span>
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    const configId = "{{ config_id }}";
+    const apiBaseUrl = "/api/qa/" + configId;
+    
+    // Load conversation history on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        loadConversationHistory();
+        
+        // Auto-resize textarea
+        const textarea = document.getElementById('questionInput');
+        textarea.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+    });
+    
+    // Load conversation history from API
+    async function loadConversationHistory() {
+        try {
+            const response = await fetch(apiBaseUrl + '/history', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                console.error('Failed to load conversation history');
+                return;
+            }
+            
+            const data = await response.json();
+            
+            if (data.messages && data.messages.length > 0) {
+                // Hide empty state
+                document.getElementById('emptyState').style.display = 'none';
+                
+                // Display messages
+                data.messages.forEach(message => {
+                    displayMessage(message.role, message.content, message.timestamp);
+                });
+                
+                // Scroll to bottom
+                scrollToBottom();
+            }
+        } catch (error) {
+            console.error('Error loading conversation history:', error);
+        }
+    }
+    
+    // Send message to API
+    async function sendMessage(event) {
+        event.preventDefault();
+        
+        const input = document.getElementById('questionInput');
+        const question = input.value.trim();
+        
+        if (!question) {
+            return;
+        }
+        
+        // Hide empty state if visible
+        document.getElementById('emptyState').style.display = 'none';
+        
+        // Display user message
+        displayMessage('user', question, new Date().toISOString());
+        
+        // Clear input
+        input.value = '';
+        input.style.height = 'auto';
+        
+        // Show loading indicator
+        showLoading(true);
+        
+        // Disable send button
+        const sendButton = document.getElementById('sendButton');
+        sendButton.disabled = true;
+        
+        try {
+            const response = await fetch(apiBaseUrl + '/ask', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ question: question })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to get response');
+            }
+            
+            const data = await response.json();
+            
+            // Display assistant response
+            displayMessage('assistant', data.answer, data.timestamp);
+            
+        } catch (error) {
+            console.error('Error sending message:', error);
+            displayMessage('assistant', 'Sorry, I encountered an error processing your question. Please try again.', new Date().toISOString());
+        } finally {
+            // Hide loading indicator
+            showLoading(false);
+            
+            // Re-enable send button
+            sendButton.disabled = false;
+            
+            // Focus input
+            input.focus();
+        }
+    }
+    
+    // Display a message in the chat
+    function displayMessage(role, content, timestamp) {
+        const messagesContainer = document.getElementById('chatMessages');
+        
+        // Create message element
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${role}`;
+        
+        const avatar = document.createElement('div');
+        avatar.className = 'message-avatar';
+        avatar.innerHTML = role === 'user' 
+            ? '<i class="fas fa-user"></i>' 
+            : '<i class="fas fa-robot"></i>';
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        
+        const text = document.createElement('div');
+        text.textContent = content;
+        
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        timestampDiv.textContent = formatTimestamp(timestamp);
+        
+        contentDiv.appendChild(text);
+        contentDiv.appendChild(timestampDiv);
+        
+        messageDiv.appendChild(avatar);
+        messageDiv.appendChild(contentDiv);
+        
+        // Insert before loading indicator
+        const loadingIndicator = document.getElementById('loadingIndicator').parentElement;
+        messagesContainer.insertBefore(messageDiv, loadingIndicator);
+        
+        // Scroll to bottom
+        scrollToBottom();
+    }
+    
+    // Show/hide loading indicator
+    function showLoading(show) {
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        if (show) {
+            loadingIndicator.classList.add('active');
+        } else {
+            loadingIndicator.classList.remove('active');
+        }
+        scrollToBottom();
+    }
+    
+    // Scroll chat to bottom
+    function scrollToBottom() {
+        const messagesContainer = document.getElementById('chatMessages');
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+    
+    // Format timestamp for display
+    function formatTimestamp(isoString) {
+        const date = new Date(isoString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        
+        if (diffMins < 1) {
+            return 'Just now';
+        } else if (diffMins < 60) {
+            return `${diffMins} min ago`;
+        } else if (diffMins < 1440) {
+            const hours = Math.floor(diffMins / 60);
+            return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+        } else {
+            return date.toLocaleString();
+        }
+    }
+    
+    // Handle suggestion chip clicks
+    function askSuggestion(question) {
+        const input = document.getElementById('questionInput');
+        input.value = question;
+        input.focus();
+        
+        // Trigger form submission
+        document.getElementById('chatForm').dispatchEvent(new Event('submit'));
+    }
+</script>
+{% endblock %}

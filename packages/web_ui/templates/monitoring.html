@@ -1,0 +1,515 @@
+{% extends "base.html" %}
+
+{% block title %}Monitoring Dashboard - Hybrid Cloud Controller{% endblock %}
+
+{% block extra_head %}
+<style>
+    .metric-card {
+        margin-bottom: 1.5rem;
+    }
+    
+    .metric-value {
+        font-size: 2rem;
+        font-weight: bold;
+    }
+    
+    .metric-label {
+        font-size: 0.875rem;
+        color: #7a7a7a;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    .progress-wrapper {
+        margin-top: 0.5rem;
+    }
+    
+    .health-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .health-icon {
+        font-size: 1.25rem;
+    }
+    
+    .alert-banner {
+        margin-bottom: 1rem;
+    }
+    
+    .time-range-selector {
+        margin-bottom: 1.5rem;
+    }
+    
+    .resource-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 1.5rem;
+    }
+    
+    .no-resources {
+        text-align: center;
+        padding: 3rem;
+    }
+    
+    .loading-spinner {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 300px;
+    }
+    
+    .last-updated {
+        font-size: 0.75rem;
+        color: #7a7a7a;
+        margin-top: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="columns">
+        <div class="column">
+            <h1 class="title">
+                <span class="icon-text">
+                    <span class="icon"><i class="fas fa-chart-line"></i></span>
+                    <span>Monitoring Dashboard</span>
+                </span>
+            </h1>
+            <p class="subtitle">Real-time resource metrics and health status</p>
+        </div>
+        <div class="column is-narrow">
+            <div class="field has-addons time-range-selector">
+                <p class="control">
+                    <button class="button time-range-btn is-primary" data-range="current">
+                        <span class="icon"><i class="fas fa-clock"></i></span>
+                        <span>Current</span>
+                    </button>
+                </p>
+                <p class="control">
+                    <button class="button time-range-btn" data-range="1h">
+                        <span>1 Hour</span>
+                    </button>
+                </p>
+                <p class="control">
+                    <button class="button time-range-btn" data-range="24h">
+                        <span>24 Hours</span>
+                    </button>
+                </p>
+                <p class="control">
+                    <button class="button time-range-btn" data-range="7d">
+                        <span>7 Days</span>
+                    </button>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Loading Spinner -->
+    <div id="loading" class="loading-spinner">
+        <button class="button is-loading is-large is-ghost"></button>
+    </div>
+    
+    <!-- No Resources Message -->
+    <div id="no-resources" class="box no-resources" style="display: none;">
+        <span class="icon is-large has-text-grey-light">
+            <i class="fas fa-server fa-3x"></i>
+        </span>
+        <h2 class="title is-4 mt-4">No Resources Provisioned</h2>
+        <p class="subtitle is-6">You haven't provisioned any resources yet.</p>
+        <a href="{{ url_for('configuration.configuration_input') }}" class="button is-primary">
+            <span class="icon"><i class="fas fa-plus"></i></span>
+            <span>Create Configuration</span>
+        </a>
+    </div>
+    
+    <!-- Resources Grid -->
+    <div id="resources-grid" class="resource-grid" style="display: none;">
+        <!-- Resource cards will be dynamically inserted here -->
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Configuration
+const API_BASE_URL = '/api/monitoring';
+const REFRESH_INTERVAL = 30000; // 30 seconds
+let currentTimeRange = 'current';
+let refreshTimer = null;
+let specificResourceId = {{ resource_id|tojson if resource_id else 'null' }};
+
+// Initialize dashboard
+document.addEventListener('DOMContentLoaded', function() {
+    setupTimeRangeButtons();
+    loadResources();
+    startAutoRefresh();
+});
+
+// Setup time range button handlers
+function setupTimeRangeButtons() {
+    const buttons = document.querySelectorAll('.time-range-btn');
+    buttons.forEach(button => {
+        button.addEventListener('click', function() {
+            // Update active button
+            buttons.forEach(btn => btn.classList.remove('is-primary'));
+            this.classList.add('is-primary');
+            
+            // Update time range and reload
+            currentTimeRange = this.dataset.range;
+            loadResources();
+        });
+    });
+}
+
+// Load resources and their metrics
+async function loadResources() {
+    const loading = document.getElementById('loading');
+    const noResources = document.getElementById('no-resources');
+    const grid = document.getElementById('resources-grid');
+    
+    loading.style.display = 'flex';
+    noResources.style.display = 'none';
+    grid.style.display = 'none';
+    
+    try {
+        // If specific resource ID is provided, load only that resource
+        if (specificResourceId) {
+            await loadSpecificResource(specificResourceId);
+        } else {
+            await loadAllResources();
+        }
+    } catch (error) {
+        console.error('Error loading resources:', error);
+        showError('Failed to load monitoring data. Please try again.');
+    }
+}
+
+// Load all resources
+async function loadAllResources() {
+    const response = await fetch(`${API_BASE_URL}/resources`);
+    
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    const loading = document.getElementById('loading');
+    const noResources = document.getElementById('no-resources');
+    const grid = document.getElementById('resources-grid');
+    
+    loading.style.display = 'none';
+    
+    if (data.resources.length === 0) {
+        noResources.style.display = 'block';
+        return;
+    }
+    
+    // Load metrics for each resource
+    const resourcesWithMetrics = await Promise.all(
+        data.resources.map(async resource => {
+            try {
+                const metricsUrl = currentTimeRange === 'current' 
+                    ? `${API_BASE_URL}/${resource.resource_id}/metrics`
+                    : `${API_BASE_URL}/${resource.resource_id}/metrics?time_range=${currentTimeRange}`;
+                
+                const metricsResponse = await fetch(metricsUrl);
+                if (metricsResponse.ok) {
+                    const metricsData = await metricsResponse.json();
+                    return { ...resource, metrics: metricsData };
+                }
+                return { ...resource, metrics: null };
+            } catch (error) {
+                console.error(`Error loading metrics for ${resource.resource_id}:`, error);
+                return { ...resource, metrics: null };
+            }
+        })
+    );
+    
+    renderResourceCards(resourcesWithMetrics);
+    grid.style.display = 'grid';
+}
+
+// Load specific resource
+async function loadSpecificResource(resourceId) {
+    const metricsUrl = currentTimeRange === 'current' 
+        ? `${API_BASE_URL}/${resourceId}/metrics`
+        : `${API_BASE_URL}/${resourceId}/metrics?time_range=${currentTimeRange}`;
+    
+    const response = await fetch(metricsUrl);
+    
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const metricsData = await response.json();
+    
+    // Create a resource object with metrics
+    const resource = {
+        resource_id: resourceId,
+        resource_type: 'resource',
+        status: 'running',
+        health: {
+            is_reachable: metricsData.current !== null,
+            status: metricsData.current ? 'healthy' : 'unreachable'
+        },
+        metrics: metricsData
+    };
+    
+    const loading = document.getElementById('loading');
+    const grid = document.getElementById('resources-grid');
+    
+    loading.style.display = 'none';
+    renderResourceCards([resource]);
+    grid.style.display = 'grid';
+}
+
+// Render resource cards
+function renderResourceCards(resources) {
+    const grid = document.getElementById('resources-grid');
+    grid.innerHTML = '';
+    
+    resources.forEach(resource => {
+        const card = createResourceCard(resource);
+        grid.appendChild(card);
+    });
+}
+
+// Create a resource card
+function createResourceCard(resource) {
+    const card = document.createElement('div');
+    card.className = 'card metric-card';
+    
+    const metrics = resource.metrics;
+    const current = metrics?.current;
+    const alerts = metrics?.alerts || [];
+    const health = resource.health;
+    
+    // Determine if resource is unreachable
+    const isUnreachable = !health.is_reachable || !current;
+    
+    // Build alerts HTML
+    let alertsHtml = '';
+    if (alerts.length > 0) {
+        alertsHtml = alerts.map(alert => `
+            <div class="notification is-warning is-light alert-banner">
+                <button class="delete"></button>
+                <strong>${alert.metric_type.toUpperCase()}</strong>: 
+                ${alert.current_value.toFixed(1)}% exceeds threshold of ${alert.threshold}%
+            </div>
+        `).join('');
+    }
+    
+    // Build metrics HTML
+    let metricsHtml = '';
+    if (isUnreachable) {
+        metricsHtml = `
+            <div class="notification is-danger is-light">
+                <span class="icon-text">
+                    <span class="icon"><i class="fas fa-exclamation-triangle"></i></span>
+                    <span><strong>Resource Unreachable</strong></span>
+                </span>
+                <p class="mt-2">Unable to collect metrics from this resource.</p>
+                ${health.last_successful_collection ? 
+                    `<p class="is-size-7 mt-1">Last successful: ${formatTimestamp(health.last_successful_collection)}</p>` 
+                    : ''}
+            </div>
+        `;
+    } else {
+        metricsHtml = `
+            ${alertsHtml}
+            
+            <!-- CPU Metric -->
+            <div class="mb-4">
+                <div class="level is-mobile">
+                    <div class="level-left">
+                        <div class="level-item">
+                            <span class="metric-label">CPU Usage</span>
+                        </div>
+                    </div>
+                    <div class="level-right">
+                        <div class="level-item">
+                            <span class="metric-value ${getMetricColor(current.cpu_percent)}">${current.cpu_percent.toFixed(1)}%</span>
+                        </div>
+                    </div>
+                </div>
+                <progress class="progress ${getProgressClass(current.cpu_percent)}" value="${current.cpu_percent}" max="100"></progress>
+            </div>
+            
+            <!-- Memory Metric -->
+            <div class="mb-4">
+                <div class="level is-mobile">
+                    <div class="level-left">
+                        <div class="level-item">
+                            <span class="metric-label">Memory Usage</span>
+                        </div>
+                    </div>
+                    <div class="level-right">
+                        <div class="level-item">
+                            <span class="metric-value ${getMetricColor(current.memory_percent)}">${current.memory_percent.toFixed(1)}%</span>
+                        </div>
+                    </div>
+                </div>
+                <progress class="progress ${getProgressClass(current.memory_percent)}" value="${current.memory_percent}" max="100"></progress>
+            </div>
+            
+            <!-- Storage Metric -->
+            <div class="mb-4">
+                <div class="level is-mobile">
+                    <div class="level-left">
+                        <div class="level-item">
+                            <span class="metric-label">Storage Usage</span>
+                        </div>
+                    </div>
+                    <div class="level-right">
+                        <div class="level-item">
+                            <span class="metric-value ${getMetricColor(current.storage_percent)}">${current.storage_percent.toFixed(1)}%</span>
+                        </div>
+                    </div>
+                </div>
+                <progress class="progress ${getProgressClass(current.storage_percent)}" value="${current.storage_percent}" max="100"></progress>
+            </div>
+            
+            <!-- Network Metric -->
+            <div class="mb-4">
+                <div class="level is-mobile">
+                    <div class="level-left">
+                        <div class="level-item">
+                            <span class="metric-label">Network Throughput</span>
+                        </div>
+                    </div>
+                    <div class="level-right">
+                        <div class="level-item">
+                            <span class="metric-value has-text-info">${current.network_mbps.toFixed(1)} Mbps</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="last-updated">
+                Last updated: ${formatTimestamp(current.timestamp)}
+            </div>
+        `;
+    }
+    
+    card.innerHTML = `
+        <header class="card-header">
+            <p class="card-header-title">
+                <span class="icon-text">
+                    <span class="icon"><i class="fas fa-server"></i></span>
+                    <span>${resource.resource_type}</span>
+                </span>
+            </p>
+            <div class="card-header-icon">
+                <span class="health-indicator">
+                    ${getHealthIcon(health.status)}
+                    <span class="tag ${getHealthTagClass(health.status)}">${health.status}</span>
+                </span>
+            </div>
+        </header>
+        <div class="card-content">
+            <div class="content">
+                <p class="is-size-7 has-text-grey mb-3">
+                    <strong>Resource ID:</strong> ${resource.resource_id.substring(0, 8)}...
+                </p>
+                ${metricsHtml}
+            </div>
+        </div>
+    `;
+    
+    // Add event listeners for alert close buttons
+    card.querySelectorAll('.notification .delete').forEach(button => {
+        button.addEventListener('click', function() {
+            this.parentElement.remove();
+        });
+    });
+    
+    return card;
+}
+
+// Get color class based on metric value
+function getMetricColor(value) {
+    if (value >= 80) return 'has-text-danger';
+    if (value >= 60) return 'has-text-warning';
+    return 'has-text-success';
+}
+
+// Get progress bar class based on value
+function getProgressClass(value) {
+    if (value >= 80) return 'is-danger';
+    if (value >= 60) return 'is-warning';
+    return 'is-success';
+}
+
+// Get health icon
+function getHealthIcon(status) {
+    const icons = {
+        'healthy': '<i class="fas fa-check-circle has-text-success health-icon"></i>',
+        'degraded': '<i class="fas fa-exclamation-triangle has-text-warning health-icon"></i>',
+        'unreachable': '<i class="fas fa-times-circle has-text-danger health-icon"></i>',
+        'unknown': '<i class="fas fa-question-circle has-text-grey health-icon"></i>'
+    };
+    return icons[status] || icons['unknown'];
+}
+
+// Get health tag class
+function getHealthTagClass(status) {
+    const classes = {
+        'healthy': 'is-success',
+        'degraded': 'is-warning',
+        'unreachable': 'is-danger',
+        'unknown': 'is-light'
+    };
+    return classes[status] || classes['unknown'];
+}
+
+// Format timestamp
+function formatTimestamp(timestamp) {
+    const date = new Date(timestamp);
+    return date.toLocaleString();
+}
+
+// Show error message
+function showError(message) {
+    const loading = document.getElementById('loading');
+    loading.style.display = 'none';
+    
+    const notification = document.createElement('div');
+    notification.className = 'notification is-danger';
+    notification.innerHTML = `
+        <button class="delete"></button>
+        ${message}
+    `;
+    
+    const container = document.querySelector('.container');
+    container.insertBefore(notification, container.firstChild);
+    
+    notification.querySelector('.delete').addEventListener('click', function() {
+        notification.remove();
+    });
+}
+
+// Start auto-refresh
+function startAutoRefresh() {
+    // Clear existing timer
+    if (refreshTimer) {
+        clearInterval(refreshTimer);
+    }
+    
+    // Set up new timer
+    refreshTimer = setInterval(() => {
+        loadResources();
+    }, REFRESH_INTERVAL);
+}
+
+// Clean up on page unload
+window.addEventListener('beforeunload', function() {
+    if (refreshTimer) {
+        clearInterval(refreshTimer);
+    }
+});
+</script>
+{% endblock %}

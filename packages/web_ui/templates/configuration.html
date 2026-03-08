@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block title %}Configuration Input - Hybrid Cloud Controller{% endblock %}
+
+{% block extra_head %}
+<style>
+    .field-group {
+        background-color: #f9f9f9;
+        padding: 1.5rem;
+        border-radius: 6px;
+        margin-bottom: 1.5rem;
+        border-left: 4px solid #3273dc;
+    }
+    
+    .field-group-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        color: #363636;
+    }
+    
+    .help.is-danger {
+        font-weight: 500;
+    }
+    
+    .field-error {
+        border-color: #f14668 !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero is-info">
+    <div class="hero-body">
+        <p class="title">
+            <span class="icon"><i class="fas fa-cogs"></i></span>
+            Application Configuration
+        </p>
+        <p class="subtitle">
+            Enter your application specifications to calculate Total Cost of Ownership
+        </p>
+    </div>
+</div>
+
+<div class="box mt-5">
+    <form id="configurationForm" method="POST" action="{{ url_for('configuration.submit_configuration') }}">
+        
+        <!-- Compute Specifications -->
+        <div class="field-group">
+            <div class="field-group-title">
+                <span class="icon-text">
+                    <span class="icon has-text-info"><i class="fas fa-microchip"></i></span>
+                    <span>Compute Specifications</span>
+                </span>
+            </div>
+            
+            <div class="columns">
+                <div class="column">
+                    <div class="field">
+                        <label class="label">CPU Cores <span class="has-text-danger">*</span></label>
+                        <div class="control has-icons-left">
+                            <input 
+                                class="input" 
+                                type="number" 
+                                name="cpu_cores" 
+                                id="cpu_cores"
+                                placeholder="e.g., 4"
+                                min="1"
+                                value="{{ form_data.cpu_cores if form_data else '' }}"
+                                required>
+                            <span class="icon is-small is-left">
+                                <i class="fas fa-microchip"></i>
+                            </span>
+                        </div>
+                        <p class="help">Number of CPU cores (positive integer)</p>
+                        <p class="help is-danger" id="cpu_cores_error" style="display: none;"></p>
+                    </div>
+                </div>
+                
+                <div class="column">
+                    <div class="field">
+                        <label class="label">Memory (GB) <span class="has-text-danger">*</span></label>
+                        <div class="control has-icons-left">
+                            <input 
+                                class="input" 
+                                type="number" 
+                                name="memory_gb" 
+                                id="memory_gb"
+                                placeholder="e.g., 16"
+                                min="1"
+                                value="{{ form_data.memory_gb if form_data else '' }}"
+                                required>
+                            <span class="icon is-small is-left">
+                                <i class="fas fa-memory"></i>
+                            </span>
+                        </div>
+                        <p class="help">Memory size in gigabytes (positive number)</p>
+                        <p class="help is-danger" id="memory_gb_error" style="display: none;"></p>
+                    </div>
+                </div>
+                
+                <div class="column">
+                    <div class="field">
+                        <label class="label">Instance Count <span class="has-text-danger">*</span></label>
+                        <div class="control has-icons-left">
+                            <input 
+                                class="input" 
+                                type="number" 
+                                name="instance_count" 
+                                id="instance_count"
+                                placeholder="e.g., 2"
+                                min="1"
+                                value="{{ form_data.instance_count if form_data else '' }}"
+                                required>
+                            <span class="icon is-small is-left">
+                                <i class="fas fa-server"></i>
+                            </span>
+                        </div>
+                        <p class="help">Number of instances (positive integer)</p>
+                        <p class="help is-danger" id="instance_count_error" style="display: none;"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Storage Specifications -->
+        <div class="field-group">
+            <div class="field-group-title">
+                <span class="icon-text">
+                    <span class="icon has-text-success"><i class="fas fa-hdd"></i></span>
+                    <span>Storage Specifications</span>
+                </span>
+            </div>
+            
+            <div class="columns">
+                <div class="column">
+                    <div class="field">
+                        <label class="label">Storage Type <span class="has-text-danger">*</span></label>
+                        <div class="control has-icons-left">
+                            <div class="select is-fullwidth">
+                                <select name="storage_type" id="storage_type" required>
+                                    <option value="">Select storage type</option>
+                                    <option value="SSD" {% if form_data and form_data.storage_type == 'SSD' %}selected{% endif %}>SSD</option>
+                                    <option value="HDD" {% if form_data and form_data.storage_type == 'HDD' %}selected{% endif %}>HDD</option>
+                                    <option value="NVME" {% if form_data and form_data.storage_type == 'NVME' %}selected{% endif %}>NVMe</option>
+                                </select>
+                            </div>
+                            <span class="icon is-small is-left">
+                                <i class="fas fa-hdd"></i>
+                            </span>
+                        </div>
+                        <p class="help">Type of storage (SSD, HDD, or NVMe)</p>
+                        <p class="help is-danger" id="storage_type_error" style="display: none;"></p>
+                    </div>
+                </div>
+                
+                <div class="column">
+                    <div class="field">
+                        <label class="label">Storage Capacity (GB) <span class="has-text-danger">*</span></label>
+                        <div class="control has-icons-left">
+                            <input 
+                                class="input" 
+                                type="number" 
+                                name="storage_capacity_gb" 
+                                id="storage_capacity_gb"
+                                placeholder="e.g., 500"
+                                min="1"
+                                value="{{ form_data.storage_capacity_gb if form_data else '' }}"
+                                required>
+                            <span class="icon is-small is-left">
+                                <i class="fas fa-database"></i>
+                            </span>
+                        </div>
+                        <p class="help">Storage capacity in gigabytes (positive number)</p>
+                        <p class="help is-danger" id="storage_capacity_gb_error" style="display: none;"></p>
+                    </div>
+                </div>
+                
+                <div class="column">
+                    <div class="field">
+                        <label class="label">Storage IOPS</label>
+                        <div class="control has-icons-left">
+                            <input 
+                                class="input" 
+                                type="number" 
+                                name="storage_iops" 
+                                id="storage_iops"
+                                placeholder="e.g., 3000 (optional)"
+                                min="1"
+                                value="{{ form_data.storage_iops if form_data else '' }}">
+                            <span class="icon is-small is-left">
+                                <i class="fas fa-tachometer-alt"></i>
+                            </span>
+                        </div>
+                        <p class="help">Input/Output operations per second (optional)</p>
+                        <p class="help is-danger" id="storage_iops_error" style="display: none;"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Network Specifications -->
+        <div class="field-group">
+            <div class="field-group-title">
+                <span class="icon-text">
+                    <span class="icon has-text-warning"><i class="fas fa-network-wired"></i></span>
+                    <span>Network Specifications</span>
+                </span>
+            </div>
+            
+            <div class="columns">
+                <div class="column">
+                    <div class="field">
+                        <label class="label">Bandwidth (Mbps) <span class="has-text-danger">*</span></label>
+                        <div class="control has-icons-left">
+                            <input 
+                                class="input" 
+                                type="number" 
+                                name="bandwidth_mbps" 
+                                id="bandwidth_mbps"
+                                placeholder="e.g., 1000"
+                                min="1"
+                                value="{{ form_data.bandwidth_mbps if form_data else '' }}"
+                                required>
+                            <span class="icon is-small is-left">
+                                <i class="fas fa-network-wired"></i>
+                            </span>
+                        </div>
+                        <p class="help">Network bandwidth in megabits per second (positive number)</p>
+                        <p class="help is-danger" id="bandwidth_mbps_error" style="display: none;"></p>
+                    </div>
+                </div>
+                
+                <div class="column">
+                    <div class="field">
+                        <label class="label">Data Transfer (GB/month) <span class="has-text-danger">*</span></label>
+                        <div class="control has-icons-left">
+                            <input 
+                                class="input" 
+                                type="number" 
+                                name="monthly_data_transfer_gb" 
+                                id="monthly_data_transfer_gb"
+                                placeholder="e.g., 5000"
+                                min="0"
+                                value="{{ form_data.monthly_data_transfer_gb if form_data else '' }}"
+                                required>
+                            <span class="icon is-small is-left">
+                                <i class="fas fa-exchange-alt"></i>
+                            </span>
+                        </div>
+                        <p class="help">Monthly data transfer in gigabytes (positive number)</p>
+                        <p class="help is-danger" id="monthly_data_transfer_gb_error" style="display: none;"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Workload Profile -->
+        <div class="field-group">
+            <div class="field-group-title">
+                <span class="icon-text">
+                    <span class="icon has-text-danger"><i class="fas fa-chart-line"></i></span>
+                    <span>Workload Profile</span>
+                </span>
+            </div>
+            
+            <div class="columns">
+                <div class="column">
+                    <div class="field">
+                        <label class="label">Utilization Percentage <span class="has-text-danger">*</span></label>
+                        <div class="control has-icons-left">
+                            <input 
+                                class="input" 
+                                type="number" 
+                                name="utilization_percentage" 
+                                id="utilization_percentage"
+                                placeholder="e.g., 70"
+                                min="0"
+                                max="100"
+                                value="{{ form_data.utilization_percentage if form_data else '' }}"
+                                required>
+                            <span class="icon is-small is-left">
+                                <i class="fas fa-percentage"></i>
+                            </span>
+                        </div>
+                        <p class="help">Expected resource utilization (0-100%)</p>
+                        <p class="help is-danger" id="utilization_percentage_error" style="display: none;"></p>
+                    </div>
+                </div>
+                
+                <div class="column">
+                    <div class="field">
+                        <label class="label">Operating Hours per Month <span class="has-text-danger">*</span></label>
+                        <div class="control has-icons-left">
+                            <input 
+                                class="input" 
+                                type="number" 
+                                name="operating_hours_per_month" 
+                                id="operating_hours_per_month"
+                                placeholder="e.g., 720"
+                                min="0"
+                                max="744"
+                                value="{{ form_data.operating_hours_per_month if form_data else '' }}"
+                                required>
+                            <span class="icon is-small is-left">
+                                <i class="fas fa-clock"></i>
+                            </span>
+                        </div>
+                        <p class="help">Hours of operation per month (0-744)</p>
+                        <p class="help is-danger" id="operating_hours_per_month_error" style="display: none;"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Form Actions -->
+        <div class="field is-grouped is-grouped-right">
+            <div class="control">
+                <button type="button" class="button is-light" onclick="window.history.back()">
+                    <span class="icon"><i class="fas fa-times"></i></span>
+                    <span>Cancel</span>
+                </button>
+            </div>
+            <div class="control">
+                <button type="button" class="button is-info" id="validateButton">
+                    <span class="icon"><i class="fas fa-check-circle"></i></span>
+                    <span>Validate</span>
+                </button>
+            </div>
+            <div class="control">
+                <button type="submit" class="button is-primary" id="submitButton">
+                    <span class="icon"><i class="fas fa-save"></i></span>
+                    <span>Save & Calculate TCO</span>
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div class="notification is-info is-light">
+    <p><strong>Note:</strong> All fields marked with <span class="has-text-danger">*</span> are required. The configuration will be validated before saving.</p>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/configuration.js') }}"></script>
+{% endblock %}

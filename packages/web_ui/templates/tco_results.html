@@ -1,0 +1,441 @@
+{% extends "base.html" %}
+
+{% block title %}TCO Results - Hybrid Cloud Controller{% endblock %}
+
+{% block extra_head %}
+<style>
+    .comparison-card {
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+    }
+    
+    .comparison-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    .cost-header {
+        padding: 1.5rem;
+        border-radius: 8px 8px 0 0;
+        color: white;
+        font-weight: 600;
+    }
+    
+    .on-prem-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .aws-header {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+    
+    .cost-total {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin: 1rem 0;
+    }
+    
+    .cost-breakdown {
+        padding: 1.5rem;
+    }
+    
+    .breakdown-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    
+    .breakdown-item:last-child {
+        border-bottom: none;
+    }
+    
+    .breakdown-category {
+        font-weight: 500;
+        color: #363636;
+    }
+    
+    .breakdown-amount {
+        font-weight: 600;
+        color: #3273dc;
+    }
+    
+    .projection-tabs {
+        margin-top: 1rem;
+    }
+    
+    .projection-content {
+        padding: 1.5rem;
+        background-color: #fafafa;
+        border-radius: 0 0 8px 8px;
+    }
+    
+    .recommendation-box {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+    }
+    
+    .recommendation-box h2 {
+        color: white;
+        margin-bottom: 1rem;
+    }
+    
+    .winner-badge {
+        display: inline-block;
+        background-color: #48c774;
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 0.875rem;
+        margin-left: 0.5rem;
+    }
+    
+    .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+    }
+    
+    .loading-content {
+        background-color: white;
+        padding: 2rem;
+        border-radius: 8px;
+        text-align: center;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="loadingOverlay" class="loading-overlay" style="display: none;">
+    <div class="loading-content">
+        <div class="loader"></div>
+        <p class="mt-4">Calculating TCO...</p>
+    </div>
+</div>
+
+<div class="hero is-info">
+    <div class="hero-body">
+        <p class="title">
+            <span class="icon"><i class="fas fa-chart-bar"></i></span>
+            Total Cost of Ownership Analysis
+        </p>
+        <p class="subtitle">
+            Compare on-premises vs AWS cloud hosting costs
+        </p>
+    </div>
+</div>
+
+{% if tco_data %}
+<!-- Recommendation Section -->
+{% if tco_data.recommendation %}
+<div class="recommendation-box mt-5">
+    <h2 class="title is-4">
+        <span class="icon"><i class="fas fa-lightbulb"></i></span>
+        Recommendation
+    </h2>
+    <p class="is-size-5">{{ tco_data.recommendation }}</p>
+</div>
+{% endif %}
+
+<!-- Cost Comparison Tabs -->
+<div class="tabs is-centered is-boxed is-large projection-tabs">
+    <ul>
+        <li class="is-active" data-tab="1-year">
+            <a>
+                <span class="icon"><i class="fas fa-calendar-alt"></i></span>
+                <span>1 Year</span>
+            </a>
+        </li>
+        <li data-tab="3-year">
+            <a>
+                <span class="icon"><i class="fas fa-calendar-alt"></i></span>
+                <span>3 Years</span>
+            </a>
+        </li>
+        <li data-tab="5-year">
+            <a>
+                <span class="icon"><i class="fas fa-calendar-alt"></i></span>
+                <span>5 Years</span>
+            </a>
+        </li>
+    </ul>
+</div>
+
+<!-- 1-Year Projection -->
+<div id="1-year-content" class="tab-content">
+    <div class="columns">
+        <div class="column">
+            <div class="comparison-card">
+                <div class="cost-header on-prem-header">
+                    <h3 class="title is-4 has-text-white">
+                        <span class="icon"><i class="fas fa-server"></i></span>
+                        On-Premises
+                        {% if tco_data.on_prem_costs['1'].total < tco_data.aws_costs['1'].total %}
+                        <span class="winner-badge">Most Cost-Effective</span>
+                        {% endif %}
+                    </h3>
+                    <div class="cost-total">${{ "{:,.2f}".format(tco_data.on_prem_costs['1'].total|float) }}</div>
+                    <p class="subtitle is-6 has-text-white">1-Year Total Cost</p>
+                </div>
+                <div class="cost-breakdown">
+                    {% for item in tco_data.on_prem_costs['1']['items'] %}
+                    <div class="breakdown-item">
+                        <span class="breakdown-category">{{ item.description }}</span>
+                        <span class="breakdown-amount">${{ "{:,.2f}".format(item.amount|float) }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="column">
+            <div class="comparison-card">
+                <div class="cost-header aws-header">
+                    <h3 class="title is-4 has-text-white">
+                        <span class="icon"><i class="fas fa-cloud"></i></span>
+                        AWS Cloud
+                        {% if tco_data.aws_costs['1'].total < tco_data.on_prem_costs['1'].total %}
+                        <span class="winner-badge">Most Cost-Effective</span>
+                        {% endif %}
+                    </h3>
+                    <div class="cost-total">${{ "{:,.2f}".format(tco_data.aws_costs['1'].total|float) }}</div>
+                    <p class="subtitle is-6 has-text-white">1-Year Total Cost</p>
+                </div>
+                <div class="cost-breakdown">
+                    {% for item in tco_data.aws_costs['1']['items'] %}
+                    <div class="breakdown-item">
+                        <span class="breakdown-category">{{ item.description }}</span>
+                        <span class="breakdown-amount">${{ "{:,.2f}".format(item.amount|float) }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 3-Year Projection -->
+<div id="3-year-content" class="tab-content" style="display: none;">
+    <div class="columns">
+        <div class="column">
+            <div class="comparison-card">
+                <div class="cost-header on-prem-header">
+                    <h3 class="title is-4 has-text-white">
+                        <span class="icon"><i class="fas fa-server"></i></span>
+                        On-Premises
+                        {% if tco_data.on_prem_costs['3'].total < tco_data.aws_costs['3'].total %}
+                        <span class="winner-badge">Most Cost-Effective</span>
+                        {% endif %}
+                    </h3>
+                    <div class="cost-total">${{ "{:,.2f}".format(tco_data.on_prem_costs['3'].total|float) }}</div>
+                    <p class="subtitle is-6 has-text-white">3-Year Total Cost</p>
+                </div>
+                <div class="cost-breakdown">
+                    {% for item in tco_data.on_prem_costs['3']['items'] %}
+                    <div class="breakdown-item">
+                        <span class="breakdown-category">{{ item.description }}</span>
+                        <span class="breakdown-amount">${{ "{:,.2f}".format(item.amount|float) }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="column">
+            <div class="comparison-card">
+                <div class="cost-header aws-header">
+                    <h3 class="title is-4 has-text-white">
+                        <span class="icon"><i class="fas fa-cloud"></i></span>
+                        AWS Cloud
+                        {% if tco_data.aws_costs['3'].total < tco_data.on_prem_costs['3'].total %}
+                        <span class="winner-badge">Most Cost-Effective</span>
+                        {% endif %}
+                    </h3>
+                    <div class="cost-total">${{ "{:,.2f}".format(tco_data.aws_costs['3'].total|float) }}</div>
+                    <p class="subtitle is-6 has-text-white">3-Year Total Cost</p>
+                </div>
+                <div class="cost-breakdown">
+                    {% for item in tco_data.aws_costs['3']['items'] %}
+                    <div class="breakdown-item">
+                        <span class="breakdown-category">{{ item.description }}</span>
+                        <span class="breakdown-amount">${{ "{:,.2f}".format(item.amount|float) }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 5-Year Projection -->
+<div id="5-year-content" class="tab-content" style="display: none;">
+    <div class="columns">
+        <div class="column">
+            <div class="comparison-card">
+                <div class="cost-header on-prem-header">
+                    <h3 class="title is-4 has-text-white">
+                        <span class="icon"><i class="fas fa-server"></i></span>
+                        On-Premises
+                        {% if tco_data.on_prem_costs['5'].total < tco_data.aws_costs['5'].total %}
+                        <span class="winner-badge">Most Cost-Effective</span>
+                        {% endif %}
+                    </h3>
+                    <div class="cost-total">${{ "{:,.2f}".format(tco_data.on_prem_costs['5'].total|float) }}</div>
+                    <p class="subtitle is-6 has-text-white">5-Year Total Cost</p>
+                </div>
+                <div class="cost-breakdown">
+                    {% for item in tco_data.on_prem_costs['5']['items'] %}
+                    <div class="breakdown-item">
+                        <span class="breakdown-category">{{ item.description }}</span>
+                        <span class="breakdown-amount">${{ "{:,.2f}".format(item.amount|float) }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="column">
+            <div class="comparison-card">
+                <div class="cost-header aws-header">
+                    <h3 class="title is-4 has-text-white">
+                        <span class="icon"><i class="fas fa-cloud"></i></span>
+                        AWS Cloud
+                        {% if tco_data.aws_costs['5'].total < tco_data.on_prem_costs['5'].total %}
+                        <span class="winner-badge">Most Cost-Effective</span>
+                        {% endif %}
+                    </h3>
+                    <div class="cost-total">${{ "{:,.2f}".format(tco_data.aws_costs['5'].total|float) }}</div>
+                    <p class="subtitle is-6 has-text-white">5-Year Total Cost</p>
+                </div>
+                <div class="cost-breakdown">
+                    {% for item in tco_data.aws_costs['5']['items'] %}
+                    <div class="breakdown-item">
+                        <span class="breakdown-category">{{ item.description }}</span>
+                        <span class="breakdown-amount">${{ "{:,.2f}".format(item.amount|float) }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Action Buttons -->
+<div class="buttons is-centered mt-6">
+    <a href="{{ url_for('qa.qa_interface', config_id=config_id) }}" class="button is-info is-large">
+        <span class="icon"><i class="fas fa-comments"></i></span>
+        <span>Ask Questions About Results</span>
+    </a>
+    <a href="{{ url_for('provisioning.provision_page', config_id=config_id) }}" class="button is-primary is-large">
+        <span class="icon"><i class="fas fa-rocket"></i></span>
+        <span>Proceed to Provisioning</span>
+    </a>
+</div>
+
+<div class="notification is-info is-light mt-5">
+    <p><strong>Note:</strong> These cost estimates are based on current AWS pricing and standard on-premises infrastructure costs. Actual costs may vary based on specific requirements and negotiated rates.</p>
+</div>
+
+{% else %}
+<!-- No TCO Data Available -->
+<div class="notification is-warning mt-5">
+    <p class="title is-5">No TCO results available</p>
+    <p>TCO calculation has not been performed for this configuration yet. Click the button below to calculate.</p>
+    <button id="calculateButton" class="button is-primary mt-3">
+        <span class="icon"><i class="fas fa-calculator"></i></span>
+        <span>Calculate TCO</span>
+    </button>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Tab switching functionality
+    document.addEventListener('DOMContentLoaded', function() {
+        const tabs = document.querySelectorAll('.tabs li');
+        const tabContents = document.querySelectorAll('.tab-content');
+        
+        tabs.forEach(tab => {
+            tab.addEventListener('click', function() {
+                const targetTab = this.getAttribute('data-tab');
+                
+                // Remove active class from all tabs
+                tabs.forEach(t => t.classList.remove('is-active'));
+                
+                // Add active class to clicked tab
+                this.classList.add('is-active');
+                
+                // Hide all tab contents
+                tabContents.forEach(content => {
+                    content.style.display = 'none';
+                });
+                
+                // Show target tab content
+                const targetContent = document.getElementById(targetTab + '-content');
+                if (targetContent) {
+                    targetContent.style.display = 'block';
+                }
+            });
+        });
+        
+        // Calculate TCO button handler
+        const calculateButton = document.getElementById('calculateButton');
+        if (calculateButton) {
+            calculateButton.addEventListener('click', function() {
+                calculateTCO();
+            });
+        }
+    });
+    
+    function calculateTCO() {
+        const configId = '{{ config_id }}';
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        
+        // Show loading overlay
+        loadingOverlay.style.display = 'flex';
+        
+        // Get authentication token from session
+        const token = '{{ session.get("token", "") }}';
+        
+        // Call API to calculate TCO
+        fetch(`http://localhost:8000/api/tco/${configId}/calculate`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => {
+            if (response.ok) {
+                return response.json();
+            } else if (response.status === 401) {
+                throw new Error('Authentication required. Please log in again.');
+            } else {
+                throw new Error('Failed to calculate TCO. Please try again.');
+            }
+        })
+        .then(data => {
+            // Reload page to show results
+            window.location.reload();
+        })
+        .catch(error => {
+            loadingOverlay.style.display = 'none';
+            alert(error.message);
+        });
+    }
+</script>
+{% endblock %}

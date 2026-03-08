@@ -1,0 +1,32 @@
+# Dockerfile for Hybrid Cloud Controller API
+FROM python:3.13-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for dependency management
+RUN pip install --no-cache-dir uv
+
+# Copy dependency files
+COPY requirements.txt requirements-development.txt ./
+
+# Install Python dependencies
+RUN uv pip install --system -r requirements-development.txt
+
+# Copy application code
+COPY packages/ ./packages/
+COPY tests/ ./tests/
+COPY pytest.ini pyproject.toml ruff.toml ./
+
+# Expose API port
+EXPOSE 10000
+
+# Run database migrations and start API server
+CMD ["sh", "-c", "python -m packages.api.app"]

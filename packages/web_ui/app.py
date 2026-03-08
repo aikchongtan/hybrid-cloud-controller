@@ -33,6 +33,6 @@ def create_app() -> Flask:
 
 if __name__ == "__main__":
     app = create_app()
-    # Development server on port 10000 or higher
+    # Development server on port 10001 (API uses 10000)
     # In production, use a proper WSGI server with SSL certificates
-    app.run(host="0.0.0.0", port=10000, debug=True, ssl_context="adhoc")
+    app.run(host="0.0.0.0", port=10001, debug=True, ssl_context="adhoc")

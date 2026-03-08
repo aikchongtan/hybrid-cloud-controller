@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database for persistent storage
+  database:
+    image: postgres:16-alpine
+    container_name: hybrid-cloud-db
+    environment:
+      POSTGRES_DB: hybrid_cloud
+      POSTGRES_USER: hybrid_cloud_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev_password_change_me}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hybrid_cloud_user -d hybrid_cloud"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hybrid-cloud-network
+
+  # LocalStack for AWS emulation
+  localstack:
+    image: localstack/localstack:latest
+    container_name: hybrid-cloud-localstack
+    environment:
+      - SERVICES=ec2,ebs,s3,ecs,pricing
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    ports:
+      - "4566:4566"  # LocalStack gateway
+      - "4510-4559:4510-4559"  # External services port range
+    volumes:
+      - localstack_data:/tmp/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hybrid-cloud-network
+
+  # REST API service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: hybrid-cloud-api
+    environment:
+      - FLASK_APP=packages.api.app:create_app
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://hybrid_cloud_user:${DB_PASSWORD:-dev_password_change_me}@database:5432/hybrid_cloud
+      - LOCALSTACK_ENDPOINT=http://localstack:4566
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-dev-encryption-key-32-bytes-long}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+      - REQUIRE_HTTPS=false
+    ports:
+      - "10000:10000"
+    depends_on:
+      database:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    volumes:
+      - ./packages:/app/packages
+      - ./tests:/app/tests
+    command: python -m flask run --host=0.0.0.0 --port=10000
+    networks:
+      - hybrid-cloud-network
+
+  # Web UI service
+  web_ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.web_ui
+    container_name: hybrid-cloud-web-ui
+    environment:
+      - FLASK_APP=packages.web_ui.app:create_app
+      - FLASK_ENV=development
+      - API_BASE_URL=http://api:10000
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+    ports:
+      - "10001:10001"
+    depends_on:
+      - api
+    volumes:
+      - ./packages:/app/packages
+      - ./tests:/app/tests
+    command: python -m packages.web_ui.app
+    networks:
+      - hybrid-cloud-network
+
+volumes:
+  postgres_data:
+    driver: local
+  localstack_data:
+    driver: local
+
+networks:
+  hybrid-cloud-network:
+    driver: bridge

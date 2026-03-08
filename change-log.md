@@ -327,3 +327,125 @@ Implemented Web UI foundation with Flask application, base template using Bulma 
 - Production deployment should use proper SSL certificates with a WSGI server
 - Route handlers are minimal placeholders - full functionality will be implemented in subsequent tasks
 - Forms currently point to API endpoints (/api/auth/login, /api/auth/register) which will be implemented separately
+
+
+## 2024-01-XX - Docker Compose and Development Setup
+
+### Description
+Implemented Docker Compose configuration for containerized development environment with all services (web_ui, api, localstack, database). Created comprehensive development environment setup with .env.example template and extensive README documentation. This provides a complete, reproducible development environment that can be started with a single command.
+
+### Files Created
+- `docker-compose.yml` - Multi-service Docker Compose configuration with PostgreSQL, LocalStack, API, and Web UI services
+- `Dockerfile.api` - Dockerfile for API service with Python 3.13, uv, and all dependencies
+- `Dockerfile.web_ui` - Dockerfile for Web UI service with Python 3.13, uv, and all dependencies
+- `.env.example` - Environment variables template with database, security, LocalStack, and application configuration
+- `.dockerignore` - Docker build optimization file to exclude unnecessary files from build context
+
+### Files Modified
+- `README.md` - Comprehensive documentation with Quick Start, Docker Compose usage, local development setup, architecture overview, troubleshooting, and contributing guidelines
+- `packages/web_ui/app.py` - Updated development server port from 10000 to 10001 (API uses 10000)
+
+### Docker Compose Services
+
+#### Database Service (Port 5432)
+- PostgreSQL 16 Alpine image
+- Environment: POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+- Volume: postgres_data for persistent storage
+- Health check: pg_isready command
+- Network: hybrid-cloud-network
+
+#### LocalStack Service (Port 4566)
+- LocalStack latest image for AWS emulation
+- Services: EC2, EBS, S3, ECS, Pricing
+- Volume: localstack_data for persistent state
+- Docker socket mount for container management
+- Health check: LocalStack health endpoint
+- Network: hybrid-cloud-network
+
+#### API Service (Port 10000)
+- Built from Dockerfile.api
+- Environment: Flask app, database URL, LocalStack endpoint, encryption keys
+- Depends on: database (healthy), localstack (healthy)
+- Volume mounts: packages/ and tests/ for live code reloading
+- Command: Flask run on port 10000
+- Network: hybrid-cloud-network
+
+#### Web UI Service (Port 10001)
+- Built from Dockerfile.web_ui
+- Environment: Flask app, API base URL, secret key
+- Depends on: api service
+- Volume mounts: packages/ and tests/ for live code reloading
+- Command: Python module execution
+- Network: hybrid-cloud-network
+
+### Environment Variables (.env.example)
+- **Database**: DB_PASSWORD, DATABASE_URL
+- **Security**: ENCRYPTION_KEY (32 bytes for AES-256), SECRET_KEY (Flask sessions)
+- **LocalStack**: LOCALSTACK_ENDPOINT, AWS credentials (test values)
+- **Application**: FLASK_ENV, FLASK_APP, REQUIRE_HTTPS
+- **API**: API_BASE_URL
+- **Session**: SESSION_TIMEOUT_MINUTES
+- **Logging**: LOG_LEVEL
+
+### README Documentation Sections
+1. **Quick Start with Docker Compose**: Step-by-step guide to start all services
+2. **Local Development Setup**: Instructions for running without Docker
+3. **Development**: Code formatting, linting, and testing commands
+4. **Environment Variables**: Key variables with security notes
+5. **Generating Secure Keys**: Python commands to generate encryption and secret keys
+6. **Architecture**: Overview of modular monorepo architecture
+7. **Services**: Detailed description of API, Web UI, LocalStack, and Database services
+8. **Troubleshooting**: Common issues and solutions for Docker, database, and LocalStack
+
+### Key Features
+- **One-Command Startup**: `docker-compose up -d` starts all services
+- **Service Health Checks**: Database and LocalStack have health checks for proper startup ordering
+- **Volume Persistence**: PostgreSQL and LocalStack data persists across container restarts
+- **Live Code Reloading**: Volume mounts enable code changes without rebuilding containers
+- **Development Ports**: API on 10000, Web UI on 10001, Database on 5432, LocalStack on 4566
+- **Network Isolation**: All services communicate via hybrid-cloud-network bridge network
+- **Environment Configuration**: Flexible configuration via .env file with sensible defaults
+- **Docker Build Optimization**: .dockerignore excludes unnecessary files for faster builds
+
+### Security Notes
+- Default passwords and keys are for development only
+- .env file is excluded from Git via .gitignore
+- README includes instructions to generate secure keys for production
+- HTTPS enforcement can be disabled for local development
+
+### Requirements Validated
+- 6.1: LocalStack adapter creates EC2 instances (LocalStack service configured)
+- 6.2: LocalStack adapter creates EBS volumes (LocalStack service configured)
+- 6.3: LocalStack adapter configures networking (LocalStack service configured)
+- 12.9: Retrieve encryption keys from environment variables (documented in .env.example)
+
+### Usage Examples
+
+Start all services:
+```bash
+docker-compose up -d
+```
+
+View logs:
+```bash
+docker-compose logs -f
+docker-compose logs -f web_ui
+```
+
+Stop services:
+```bash
+docker-compose down
+docker-compose down -v  # Remove volumes
+```
+
+Rebuild after code changes:
+```bash
+docker-compose up -d --build
+```
+
+### Notes
+- Development environment uses port 10000+ as specified in design document
+- LocalStack provides AWS emulation without incurring costs
+- PostgreSQL is used instead of SQLite for production-like development environment
+- Docker Compose configuration supports both development and testing workflows
+- README provides comprehensive documentation for both Docker and local development approaches

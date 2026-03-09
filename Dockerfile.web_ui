@@ -16,8 +16,9 @@ RUN pip install --no-cache-dir uv
 # Copy dependency files
 COPY requirements.txt requirements-development.txt ./
 
-# Install Python dependencies using pip directly
-RUN pip install --no-cache-dir -r requirements-development.txt
+# Install Python dependencies - install production deps first, then dev deps
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -r requirements-development.txt
 
 # Copy application code
 COPY packages/ ./packages/

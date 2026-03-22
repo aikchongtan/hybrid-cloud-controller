@@ -69,14 +69,31 @@
                 
                 <div class="navbar-end">
                     <div class="navbar-item">
-                        <div class="buttons">
-                            <a class="button is-primary" href="{{ url_for('auth.register') }}">
-                                <strong>Sign up</strong>
-                            </a>
-                            <a class="button is-light" href="{{ url_for('auth.login') }}">
-                                Log in
-                            </a>
-                        </div>
+                        {% if session.get('token') %}
+                            <!-- Logged in user -->
+                            <div class="buttons">
+                                <span class="button is-static">
+                                    <span class="icon"><i class="fas fa-user"></i></span>
+                                    <span>User ID: {{ session.get('user_id')[:8] }}...</span>
+                                </span>
+                                <form method="POST" action="{{ url_for('auth.logout') }}" style="display: inline;">
+                                    <button type="submit" class="button is-light">
+                                        <span class="icon"><i class="fas fa-sign-out-alt"></i></span>
+                                        <span>Logout</span>
+                                    </button>
+                                </form>
+                            </div>
+                        {% else %}
+                            <!-- Not logged in -->
+                            <div class="buttons">
+                                <a class="button is-primary" href="{{ url_for('auth.register') }}">
+                                    <strong>Sign up</strong>
+                                </a>
+                                <a class="button is-light" href="{{ url_for('auth.login') }}">
+                                    Log in
+                                </a>
+                            </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>

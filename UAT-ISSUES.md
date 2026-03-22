@@ -33,6 +33,44 @@ All three feature cards should have equal height for visual consistency.
 
 ---
 
+### Issue #6: Low Contrast Instruction Text on Configuration Form
+**Priority**: Low  
+**Severity**: Minor (Cosmetic/Accessibility)  
+**Status**: Open
+
+**Description**:
+The instruction text below each input field on the configuration form has very low contrast (pale gray text on light background), making it difficult to read.
+
+**Location**: Configuration input page (http://localhost:10001/configuration)
+
+**Affected Text**:
+- "Number of CPU cores (positive integer)"
+- "Memory size in gigabytes (positive number)"
+- "Number of instances (positive integer)"
+- "Type of storage (SSD, HDD, or NVMe)"
+- "Storage capacity in gigabytes (positive number)"
+- "Input/Output operations per second (optional)"
+- "Network bandwidth in megabits per second (positive number)"
+- "Monthly data transfer in gigabytes (positive number)"
+- "Expected resource utilization (0-100%)"
+- "Hours of operation per month (0-744)"
+
+**Expected**:
+Instruction text should have sufficient contrast for readability (WCAG AA standard: 4.5:1 contrast ratio for normal text)
+
+**Actual**:
+Text appears to be very light gray on light background, making it hard to read
+
+**Suggested Fix**:
+- Increase text color darkness (e.g., use Bulma's `has-text-grey-dark` or `has-text-grey-darker` classes)
+- Or add custom CSS with better contrast color
+
+**Workaround**: None needed - text is still readable with effort
+
+**Screenshot**: Provided
+
+---
+
 ## Functional Issues
 
 ### Issue #2: Web UI Cannot Connect to API (Wrong Hostname)
@@ -90,6 +128,118 @@ Database should be initialized and tables created automatically when API starts.
 
 ---
 
+### Issue #4: Navigation Bar Not Showing Login Status
+**Priority**: High  
+**Severity**: Major (Functional)  
+**Status**: ✅ Fixed
+
+**Description**:
+After successful login, the navigation bar still shows "Sign up" and "Log in" buttons instead of showing the logged-in user information and a "Logout" button.
+
+**Location**: `packages/web_ui/templates/base.html`
+
+**Expected**:
+- After login, navigation should show user ID and "Logout" button
+- "Sign up" and "Log in" buttons should be hidden when logged in
+
+**Actual**:
+- Navigation bar was hardcoded to always show "Sign up" and "Log in" buttons
+- No check for `session.get('token')` to determine login status
+
+**Fix Applied**:
+Added conditional logic in base.html navigation:
+```jinja2
+{% if session.get('token') %}
+    <!-- Show user ID and Logout button -->
+{% else %}
+    <!-- Show Sign up and Log in buttons -->
+{% endif %}
+```
+
+**Status**: ✅ Fixed - Web UI restarted
+
+---
+
+### Issue #5: Session Cookie Not Being Set (HTTPS Required)
+**Priority**: Critical  
+**Severity**: Blocker  
+**Status**: ✅ Fixed
+
+**Description**:
+After successful login, the session cookie was not being set in the browser, causing the user to appear logged out even though the login API call succeeded.
+
+**Location**: `packages/web_ui/app.py`
+
+**Root Cause**:
+Flask was configured with `SESSION_COOKIE_SECURE = True`, which requires HTTPS connections. Since we're running on HTTP for local development (http://localhost:10001), the browser refused to set the secure cookie.
+
+**Expected**:
+- Session cookie should be set after successful login
+- User should remain logged in across page navigations
+
+**Actual**:
+- Session cookie was not being set due to HTTPS requirement
+- User appeared logged out immediately after login
+
+**Fix Applied**:
+Changed `SESSION_COOKIE_SECURE = False` for local development in `app.py`:
+```python
+app.config["SESSION_COOKIE_SECURE"] = False  # For local development
+```
+
+**Note**: In production with HTTPS, this should be set back to `True` for security.
+
+**Status**: ✅ Fixed - Web UI restarted
+
+---
+
+### Issue #7: Pricing Data Not Initialized on Startup
+**Priority**: Critical  
+**Severity**: Blocker  
+**Status**: ✅ Fixed
+
+**Description**:
+TCO calculation fails with "Error: Pricing data unavailable" because the pricing_data table in the database is empty. The application requires pricing data to calculate AWS costs.
+
+**Location**: 
+- `packages/pricing_service/fetcher.py`
+- Database table: `pricing_data`
+
+**Error Message**: "Error: Pricing data unavailable. Please try again later."
+
+**Root Cause**:
+- Pricing service tries to fetch from AWS Pricing API, which doesn't work with LocalStack
+- No fallback pricing data was initialized in the database on startup
+- TCO calculation requires pricing data to proceed
+
+**Expected**:
+- Pricing data should be initialized automatically on first startup
+- Fallback pricing should be available when AWS API is unavailable
+
+**Actual**:
+- Database pricing_data table was empty
+- TCO calculation failed immediately
+
+**Fix Applied**:
+Manually initialized pricing data with fallback values:
+```bash
+docker compose exec api python -c "..."
+```
+
+**Permanent Fix Needed**:
+Add pricing data initialization to API startup in `packages/api/app.py`:
+```python
+# Initialize pricing data if not exists
+from packages.pricing_service.fetcher import get_current_pricing, _store_pricing_data
+if not get_current_pricing():
+    # Store fallback pricing
+    _store_pricing_data(fallback_pricing_data)
+```
+
+**Status**: ✅ Fixed - Pricing data initialized
+
+---
+
 ## Performance Issues
 
 _[To be filled during UAT]_
@@ -107,3 +257,37 @@ _[To be filled during UAT]_
 - Continue UAT and document all issues here
 - Prioritize functional issues over cosmetic ones
 - Batch UI fixes together at the end
+
+### Issue #8: Winner Badge Placed Incorrectly (String Comparison Bug)
+**Priority**: High  
+**Severity**: Major (Functional/Logic Error)  
+**Status**: ✅ Fixed
+
+**Description**:
+The "Most Cost-Effective" badge is placed on the wrong option (AWS) even though On-Premises has a lower cost ($6,006.62 vs $11,555.28).
+
+**Location**: `packages/web_ui/templates/tco_results.html`
+
+**Root Cause**:
+The API returns cost totals as strings (e.g., `"6006.62"`, `"11555.28"`), but the template was comparing them directly without converting to numbers. This caused string comparison instead of numeric comparison. In string comparison, `"11555.28" < "6006.62"` evaluates to `True` because `"1"` comes before `"6"` alphabetically.
+
+**Expected**:
+- Badge should appear on the option with the lower numeric cost
+- On-Premises ($6,006.62) should have the badge, not AWS ($11,555.28)
+
+**Actual**:
+- Badge appeared on AWS due to incorrect string comparison
+- String comparison: `"11555.28" < "6006.62"` = True (alphabetically)
+- Numeric comparison: `11555.28 < 6006.62` = False (correct)
+
+**Fix Applied**:
+Added `|float` filter to convert strings to numbers before comparison in all three tabs (1-year, 3-year, 5-year):
+```jinja2
+{% if tco_data.on_prem_costs['1'].total|float < tco_data.aws_costs['1'].total|float %}
+```
+
+**Status**: ✅ Fixed - Web UI restarted
+
+**Screenshot**: Provided
+
+---

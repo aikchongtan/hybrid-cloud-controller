@@ -10,18 +10,22 @@ def create_app() -> Flask:
     # Configure secret key for sessions (should be from environment in production)
     app.config["SECRET_KEY"] = "dev-secret-key-change-in-production"
 
-    # Configure HTTPS-only serving (Requirement 12.10)
-    app.config["SESSION_COOKIE_SECURE"] = True
+    # Configure session cookies
+    # For local development (HTTP), set SESSION_COOKIE_SECURE to False
+    # In production with HTTPS, set to True
+    app.config["SESSION_COOKIE_SECURE"] = False  # Changed for local development
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
-    # Force HTTPS redirect middleware
+    # Force HTTPS redirect middleware (disabled for local development)
     @app.before_request
     def force_https():
         """Redirect HTTP requests to HTTPS."""
-        if not request.is_secure and not app.debug:
-            url = request.url.replace("http://", "https://", 1)
-            return redirect(url, code=301)
+        # Disabled for local development - enable in production
+        # if not request.is_secure and not app.debug:
+        #     url = request.url.replace("http://", "https://", 1)
+        #     return redirect(url, code=301)
+        pass
 
     # Register routes
     from packages.web_ui import routes

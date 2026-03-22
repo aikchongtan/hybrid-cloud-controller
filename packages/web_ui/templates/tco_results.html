@@ -182,7 +182,7 @@
                     <h3 class="title is-4 has-text-white">
                         <span class="icon"><i class="fas fa-server"></i></span>
                         On-Premises
-                        {% if tco_data.on_prem_costs['1'].total < tco_data.aws_costs['1'].total %}
+                        {% if tco_data.on_prem_costs['1'].total|float < tco_data.aws_costs['1'].total|float %}
                         <span class="winner-badge">Most Cost-Effective</span>
                         {% endif %}
                     </h3>
@@ -206,7 +206,7 @@
                     <h3 class="title is-4 has-text-white">
                         <span class="icon"><i class="fas fa-cloud"></i></span>
                         AWS Cloud
-                        {% if tco_data.aws_costs['1'].total < tco_data.on_prem_costs['1'].total %}
+                        {% if tco_data.aws_costs['1'].total|float < tco_data.on_prem_costs['1'].total|float %}
                         <span class="winner-badge">Most Cost-Effective</span>
                         {% endif %}
                     </h3>
@@ -235,7 +235,7 @@
                     <h3 class="title is-4 has-text-white">
                         <span class="icon"><i class="fas fa-server"></i></span>
                         On-Premises
-                        {% if tco_data.on_prem_costs['3'].total < tco_data.aws_costs['3'].total %}
+                        {% if tco_data.on_prem_costs['3'].total|float < tco_data.aws_costs['3'].total|float %}
                         <span class="winner-badge">Most Cost-Effective</span>
                         {% endif %}
                     </h3>
@@ -259,7 +259,7 @@
                     <h3 class="title is-4 has-text-white">
                         <span class="icon"><i class="fas fa-cloud"></i></span>
                         AWS Cloud
-                        {% if tco_data.aws_costs['3'].total < tco_data.on_prem_costs['3'].total %}
+                        {% if tco_data.aws_costs['3'].total|float < tco_data.on_prem_costs['3'].total|float %}
                         <span class="winner-badge">Most Cost-Effective</span>
                         {% endif %}
                     </h3>
@@ -288,7 +288,7 @@
                     <h3 class="title is-4 has-text-white">
                         <span class="icon"><i class="fas fa-server"></i></span>
                         On-Premises
-                        {% if tco_data.on_prem_costs['5'].total < tco_data.aws_costs['5'].total %}
+                        {% if tco_data.on_prem_costs['5'].total|float < tco_data.aws_costs['5'].total|float %}
                         <span class="winner-badge">Most Cost-Effective</span>
                         {% endif %}
                     </h3>
@@ -312,7 +312,7 @@
                     <h3 class="title is-4 has-text-white">
                         <span class="icon"><i class="fas fa-cloud"></i></span>
                         AWS Cloud
-                        {% if tco_data.aws_costs['5'].total < tco_data.on_prem_costs['5'].total %}
+                        {% if tco_data.aws_costs['5'].total|float < tco_data.on_prem_costs['5'].total|float %}
                         <span class="winner-badge">Most Cost-Effective</span>
                         {% endif %}
                     </h3>

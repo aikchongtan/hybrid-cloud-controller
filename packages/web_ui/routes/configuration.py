@@ -11,7 +11,9 @@ logger = logging.getLogger("hybrid_cloud.web_ui.routes.configuration")
 bp = Blueprint("configuration", __name__)
 
 # API base URL (should be from environment in production)
-API_BASE_URL = "http://localhost:8000"
+# Use 'api' hostname for Docker, 'localhost' for local development
+import os
+API_BASE_URL = os.getenv("API_BASE_URL", "http://api:10000")
 
 
 @bp.route("/configuration", methods=["GET"])

@@ -1,12 +1,14 @@
 """Flask application setup for Hybrid Cloud Controller API."""
 
 import logging
+import os
 from typing import Any
 
 from flask import Flask, request
 from werkzeug.exceptions import HTTPException
 
 from packages.api.middleware import auth, error_handler, https_enforcement
+from packages.database import init_database, create_tables
 
 # Configure logging
 logger = logging.getLogger("hybrid_cloud.api")
@@ -36,6 +38,14 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
     # Apply custom configuration if provided
     if config:
         app.config.update(config)
+
+    # Initialize database
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        logger.info("Initializing database...")
+        init_database(database_url)
+        create_tables()
+        logger.info("Database initialized successfully")
 
     # Register middleware
     _register_middleware(app)

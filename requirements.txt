@@ -83,3 +83,4 @@ urllib3==1.26.20
     #   requests
 werkzeug==3.1.6
     # via flask
+psycopg2-binary>=2.9.0

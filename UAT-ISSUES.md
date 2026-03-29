@@ -291,3 +291,74 @@ Added `|float` filter to convert strings to numbers before comparison in all thr
 **Screenshot**: Provided
 
 ---
+
+### Issue #9: Q&A Question Input Field Too Small
+**Priority**: Low  
+**Severity**: Minor (Cosmetic/UX)  
+**Status**: Open
+
+**Description**:
+The question input field on the Q&A page is disproportionately small, making it difficult to see the full question being typed.
+
+**Location**: Q&A page (http://localhost:10001/qa/...)
+
+**Expected**:
+- Input field should be large enough to comfortably type and review questions
+- Should accommodate at least 100-150 characters visible at once
+- Should be proportional to the page layout
+
+**Actual**:
+- Input field appears very small (looks like ~20-30 characters wide)
+- Difficult to review longer questions before sending
+
+**Suggested Fix**:
+- Increase input field width to use more of the available horizontal space
+- Consider using a textarea instead of input for multi-line questions
+- Or increase font size and padding for better visibility
+
+**Workaround**: Questions still work, just harder to review before sending
+
+**Screenshot**: Provided
+
+**Note**: Deferred for batch UI fix with Issues #1 and #6
+
+---
+
+### Issue #10: Q&A API Endpoints Missing Proxy Routes
+**Priority**: Critical  
+**Severity**: Blocker  
+**Status**: ✅ Fixed
+
+**Description**:
+Q&A service fails with "Sorry, I encountered an error processing your question" because the Web UI JavaScript makes API calls to `/api/qa/...` which are routed to the Web UI service (port 10001) instead of the API service (port 10000).
+
+**Location**: `packages/web_ui/routes/qa.py`
+
+**Root Cause**:
+- Q&A template JavaScript uses relative URLs (`/api/qa/...`)
+- These URLs are handled by the Web UI service, not the API service
+- Web UI didn't have proxy endpoints to forward Q&A requests to the API
+
+**Expected**:
+- Q&A questions should be forwarded to the API service
+- Responses should be returned to the browser
+- Conversation history should be retrievable
+
+**Actual**:
+- Web UI returned 404 for `/api/qa/.../ask` and `/api/qa/.../history`
+- Q&A service appeared broken to the user
+
+**Fix Applied**:
+Added two proxy endpoints in `packages/web_ui/routes/qa.py`:
+1. `POST /api/qa/<config_id>/ask` - Forwards questions to API
+2. `GET /api/qa/<config_id>/history` - Retrieves conversation history from API
+
+Both endpoints:
+- Check authentication
+- Forward requests to API service at `http://api:10000`
+- Handle errors gracefully
+- Return appropriate status codes
+
+**Status**: ✅ Fixed - Web UI restarted
+
+---

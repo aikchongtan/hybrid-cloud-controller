@@ -3,7 +3,7 @@
 import logging
 
 import requests
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
 
 logger = logging.getLogger("hybrid_cloud.web_ui.routes.configuration")
 
@@ -26,6 +26,43 @@ def configuration_input():
     Validates: Requirements 1.1, 1.2, 1.3, 1.4
     """
     return render_template("configuration.html")
+
+
+@bp.route("/api/configurations/validate", methods=["POST"])
+def validate_configuration():
+    """
+    Proxy endpoint for validating configuration without authentication.
+
+    POST: Forward validation request to API (public endpoint)
+    """
+    try:
+        # Get configuration data from request
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({"valid": False, "message": "Request body is required"}), 400
+
+        # Forward to API (validation endpoint is public, no auth required)
+        response = requests.post(
+            f"{API_BASE_URL}/api/configurations/validate",
+            json=data,
+            timeout=10,
+        )
+
+        # Return API response as-is
+        return jsonify(response.json()), response.status_code
+
+    except requests.exceptions.Timeout:
+        logger.error("API request timeout during configuration validation")
+        return jsonify({"valid": False, "message": "Request timeout. Please try again."}), 504
+
+    except requests.exceptions.ConnectionError:
+        logger.error("API connection error during configuration validation")
+        return jsonify({"valid": False, "message": "Unable to connect to service"}), 503
+
+    except Exception as e:
+        logger.error(f"Unexpected error during configuration validation: {e}")
+        return jsonify({"valid": False, "message": "An unexpected error occurred"}), 500
 
 
 @bp.route("/configuration", methods=["POST"])

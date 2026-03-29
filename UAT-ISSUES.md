@@ -320,7 +320,43 @@ The question input field on the Q&A page is disproportionately small, making it 
 
 **Screenshot**: Provided
 
-**Note**: Deferred for batch UI fix with Issues #1 and #6
+**Note**: Deferred for batch UI fix with Issues #1, #6, and #12
+
+---
+
+### Issue #12: Low Contrast Cost Details on TCO Results Page
+**Priority**: Low  
+**Severity**: Minor (Cosmetic/Accessibility)  
+**Status**: Open
+
+**Description**:
+The cost breakdown details (line items) on the TCO results page use grey text on a black background, making it difficult to read the cost details.
+
+**Location**: TCO results page (http://localhost:10001/tco/results/...)
+
+**Affected Elements**:
+- Cost line items under On-Premises card (grey text on dark purple/black background)
+- Cost line items under AWS Cloud card (grey text on dark pink/black background)
+
+**Expected**:
+- Cost details should have sufficient contrast for readability
+- Text should be easily readable against the card backgrounds
+- Should meet WCAG AA accessibility standards (4.5:1 contrast ratio)
+
+**Actual**:
+- Grey text on black background is hard to read
+- Users have to strain to see the cost breakdown details
+
+**Suggested Fix**:
+- Change text color to white or light grey with higher contrast
+- Or lighten the background color behind the cost details
+- Use Bulma's `has-text-white` or `has-text-light` classes
+
+**Workaround**: None needed - text is still readable with effort
+
+**Screenshot**: Provided
+
+**Note**: Deferred for batch UI fix with Issues #1, #6, and #9
 
 ---
 
@@ -360,5 +396,93 @@ Both endpoints:
 - Return appropriate status codes
 
 **Status**: ✅ Fixed - Web UI restarted
+
+---
+
+### Issue #11: Configuration Validation Endpoint Wrong URL
+**Priority**: Critical  
+**Severity**: Blocker  
+**Status**: ✅ Fixed
+
+**Description**:
+When clicking the "Validate" button on the configuration form, the validation fails with "Unable to validate configuration. Please try again." error.
+
+**Location**: 
+- `packages/web_ui/static/js/configuration.js`
+- `packages/web_ui/routes/configuration.py`
+
+**Root Cause**:
+1. JavaScript was hardcoded to call `http://localhost:8000` (wrong port - should be 10000)
+2. Web UI didn't have a proxy endpoint for `/api/configurations/validate`
+3. Validation requests were failing because they couldn't reach the API
+
+**Expected**:
+- Validation button should validate configuration against API rules
+- Success message should appear if configuration is valid
+- Field-specific errors should appear if validation fails
+
+**Actual**:
+- Validation failed with generic error message
+- API logs showed authentication errors (401)
+- JavaScript was calling wrong URL
+
+**Fix Applied**:
+1. Changed JavaScript to use relative URL `/api/configurations/validate` instead of hardcoded `http://localhost:8000`
+2. Added proxy endpoint in `packages/web_ui/routes/configuration.py`:
+   - `POST /api/configurations/validate` - Forwards validation to API
+   - Public endpoint (no authentication required)
+   - Returns validation results to browser
+
+**Files Modified**:
+- `packages/web_ui/static/js/configuration.js` - Fixed API URL
+- `packages/web_ui/routes/configuration.py` - Added validation proxy endpoint
+
+**Status**: ✅ Fixed - Web UI restarted
+
+---
+
+### Issue #13: Q&A Service Limited Semantic Understanding
+**Priority**: Medium  
+**Severity**: Minor (Functional Limitation)  
+**Status**: Open - Future Enhancement
+
+**Description**:
+The Q&A service works and returns responses, but has limited semantic understanding. It uses simple keyword matching rather than intelligent natural language processing, resulting in generic or incomplete answers for many questions.
+
+**Location**: `packages/qa_service/processor.py`
+
+**Examples of Limitations**:
+1. "Compare storage costs" → Returns default help message (doesn't recognize "storage" maps to "hardware" for On-Prem and "EBS/S3" for AWS)
+2. "Compare power costs" → Returns "Found power in on-premises costs ($933.12), but not in AWS costs" (doesn't understand AWS power is included in EC2 costs)
+3. "What are one-time sunk costs" → Returns default help message (doesn't understand "sunk costs" = "hardware")
+
+**Root Cause**:
+- Q&A processor uses exact keyword matching (`if "power" in question_lower`)
+- No semantic understanding or synonym mapping
+- No context awareness (e.g., AWS power costs are embedded in EC2 pricing)
+- Limited to predefined patterns and keywords
+
+**Expected (Future Enhancement)**:
+- Intelligent question understanding using NLP or LLM
+- Semantic mapping of related terms (storage → hardware/EBS/S3, power → electricity/EC2)
+- Context-aware responses that explain cost relationships
+- Ability to answer open-ended questions about TCO methodology
+
+**Actual**:
+- Basic keyword matching with limited patterns
+- Generic help message for unrecognized questions
+- Partial answers when keywords only partially match
+
+**Suggested Enhancement**:
+- Integrate AI/LLM (e.g., OpenAI, Anthropic) for natural language understanding
+- Add synonym mapping for common terms
+- Enhance cost item categorization to show relationships
+- Add more sophisticated question patterns
+
+**Workaround**: 
+- Users can ask questions using exact cost item names from the breakdown
+- Use suggested question formats from the help message
+
+**Note**: Q&A service is functional and working correctly - this is a feature enhancement request, not a bug
 
 ---

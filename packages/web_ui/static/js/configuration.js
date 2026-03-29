@@ -218,10 +218,8 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             validateButton.classList.add('is-loading');
             
-            // Use the API base URL from the backend
-            const apiBaseUrl = 'http://localhost:8000';
-            
-            const response = await fetch(`${apiBaseUrl}/api/configurations/validate`, {
+            // Use relative URL to call Web UI proxy endpoint
+            const response = await fetch('/api/configurations/validate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

@@ -6,6 +6,7 @@ including EC2 instances, EBS volumes, VPC networking, and ECS deployments.
 
 from __future__ import annotations
 
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -106,16 +107,19 @@ class NetworkSpec:
     monthly_data_transfer_gb: int
 
 
-def _get_boto3_client(service_name: str, endpoint_url: str = "http://localhost:4566"):
+def _get_boto3_client(service_name: str, endpoint_url: str | None = None):
     """Create boto3 client configured for LocalStack.
 
     Args:
         service_name: AWS service name (ec2, ecs, etc.)
-        endpoint_url: LocalStack endpoint URL
+        endpoint_url: LocalStack endpoint URL (defaults to LOCALSTACK_ENDPOINT env var)
 
     Returns:
         Configured boto3 client
     """
+    if endpoint_url is None:
+        endpoint_url = os.getenv("LOCALSTACK_ENDPOINT", "http://localhost:4566")
+    
     return boto3.client(
         service_name,
         endpoint_url=endpoint_url,
@@ -172,7 +176,7 @@ async def create_ec2_instance(
     spec: ComputeSpec,
     provision_id: str,
     db_session: Session,
-    endpoint_url: str = "http://localhost:4566",
+    endpoint_url: str | None = None,
 ) -> list[EC2Instance]:
     """Create EC2 instances in LocalStack matching compute specifications.
 
@@ -245,7 +249,7 @@ async def create_ebs_volume(
     instance_count: int,
     provision_id: str,
     db_session: Session,
-    endpoint_url: str = "http://localhost:4566",
+    endpoint_url: str | None = None,
 ) -> list[EBSVolume]:
     """Create EBS volumes in LocalStack matching storage specifications.
 
@@ -323,7 +327,7 @@ async def configure_networking(
     spec: NetworkSpec,
     provision_id: str,
     db_session: Session,
-    endpoint_url: str = "http://localhost:4566",
+    endpoint_url: str | None = None,
 ) -> NetworkConfig:
     """Configure VPC and networking in LocalStack matching network specifications.
 
@@ -471,7 +475,7 @@ async def deploy_to_ecs(
     provision_id: str,
     db_session: Session,
     environment_vars: dict[str, str] | None = None,
-    endpoint_url: str = "http://localhost:4566",
+    endpoint_url: str | None = None,
 ) -> ECSDeployment:
     """Deploy container to emulated ECS in LocalStack.
 

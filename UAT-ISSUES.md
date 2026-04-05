@@ -999,3 +999,218 @@ All endpoints:
 - ✅ Web UI service restarted with new code
 
 ---
+
+### Issue #16: Provisioning JavaScript Uses Hardcoded localhost:8000 URLs
+**Priority**: Critical  
+**Severity**: Blocker (Feature Not Functional)  
+**Status**: ✅ Fixed
+
+**Description**:
+The provisioning page JavaScript was hardcoded to call `http://localhost:8000/api/provision` instead of using relative URLs. This caused provisioning requests to fail with "Load failed" error because:
+1. Wrong port (8000 instead of 10001 for Web UI)
+2. Doesn't work with proxy endpoints (needs relative URLs)
+3. Similar to Issue #11 (configuration validation had same problem)
+
+**Location**: `packages/web_ui/templates/provisioning.html`
+
+**Error Message**: "Provisioning failed: Load failed"
+
+**Root Cause**:
+- JavaScript fetch calls used absolute URLs: `http://localhost:8000/api/provision`
+- Should use relative URLs: `/api/provision`
+- Proxy endpoints exist but weren't being called due to wrong URLs
+
+**Expected Behavior**:
+- JavaScript should use relative URLs that route through Web UI proxy endpoints
+- Proxy endpoints forward requests to API with authentication
+
+**Actual Behavior**:
+- Requests went to wrong URL and failed
+- Browser showed "Load failed" error
+
+**Fix Applied**:
+Changed two fetch URLs in `packages/web_ui/templates/provisioning.html`:
+1. `http://localhost:8000/api/provision` → `/api/provision`
+2. `http://localhost:8000/api/provision/${provisionId}/status` → `/api/provision/${provisionId}/status`
+
+**Files Modified**:
+- `packages/web_ui/templates/provisioning.html`
+
+**Testing**:
+- ✅ Provisioning request now reaches Web UI proxy endpoint
+- ✅ Request forwarded to API successfully
+- ✅ Web UI service restarted
+
+**Status**: ✅ Fixed - Commit [pending]
+
+---
+
+### Issue #17: Flask Async Support Missing (asgiref Package)
+**Priority**: Critical  
+**Severity**: Blocker (Feature Not Functional)  
+**Status**: ✅ Fixed
+
+**Description**:
+The API service has async route handlers (`async def provision_resources()`) but Flask was not installed with async support. This caused provisioning to fail with error: "Install Flask with the 'async' extra in order to use async views."
+
+**Location**: `packages/api/routes/provisioning.py`
+
+**Error Message**: 
+```
+RuntimeError: Install Flask with the 'async' extra in order to use async views.
+```
+
+**Root Cause**:
+- API uses async functions for provisioning (to handle LocalStack async operations)
+- Flask 3.1.3 requires `asgiref` package for async view support
+- `asgiref` was not installed in the container
+
+**Expected Behavior**:
+- Async route handlers should work without errors
+- Flask should handle async/await syntax
+
+**Actual Behavior**:
+- Provisioning failed with RuntimeError
+- API returned 500 error
+
+**Fix Applied**:
+1. Installed `asgiref` package: `pip install 'flask[async]'`
+2. Updated `requirements.txt` to include `asgiref==3.11.1`
+3. Restarted API service
+
+**Files Modified**:
+- `requirements.txt` (added asgiref==3.11.1)
+
+**Testing**:
+- ✅ Async routes now work without errors
+- ✅ Provisioning proceeds past authentication
+- ✅ API service restarted successfully
+
+**Status**: ✅ Fixed - Commit [pending]
+
+---
+
+### Issue #18: LocalStack Endpoint Hardcoded to localhost:4566
+**Priority**: Critical  
+**Severity**: Blocker (Feature Not Functional)  
+**Status**: ✅ Fixed
+
+**Description**:
+The LocalStack adapter was hardcoded to connect to `http://localhost:4566`, but inside Docker containers, services must use Docker service names. This caused provisioning to fail with: "Could not connect to the endpoint URL: http://localhost:4566/"
+
+**Location**: 
+- `packages/provisioner/localstack_adapter.py`
+- `.env`
+
+**Error Message**: 
+```
+Provisioning failed: Failed to provision resources: Failed to create EC2 instances: 
+Could not connect to the endpoint URL: "http://localhost:4566/"
+```
+
+**Root Cause**:
+- LocalStack adapter functions had hardcoded default: `endpoint_url="http://localhost:4566"`
+- Inside Docker, `localhost` refers to the container itself, not the host
+- Should use Docker service name: `http://localstack:4566`
+- Environment variable `LOCALSTACK_ENDPOINT` existed but wasn't being used
+
+**Expected Behavior**:
+- LocalStack adapter should read endpoint from `LOCALSTACK_ENDPOINT` environment variable
+- Default should work for Docker environment (service name)
+- Should connect to LocalStack successfully
+
+**Actual Behavior**:
+- Connection failed because localhost:4566 not accessible from API container
+- Provisioning failed after authentication
+
+**Fix Applied**:
+
+1. **Updated `.env` file**:
+   ```
+   LOCALSTACK_ENDPOINT=http://localstack:4566
+   ```
+
+2. **Updated `packages/provisioner/localstack_adapter.py`**:
+   - Added `import os` at top
+   - Changed `_get_boto3_client()` to read from environment:
+     ```python
+     def _get_boto3_client(service_name: str, endpoint_url: str | None = None):
+         if endpoint_url is None:
+             endpoint_url = os.getenv("LOCALSTACK_ENDPOINT", "http://localhost:4566")
+         # ...
+     ```
+   - Updated all function signatures to use `endpoint_url: str | None = None` instead of hardcoded default:
+     - `create_ec2_instance()`
+     - `create_ebs_volume()`
+     - `configure_networking()`
+     - `deploy_to_ecs()`
+
+**Files Modified**:
+- `.env`
+- `packages/provisioner/localstack_adapter.py`
+
+**Testing**:
+- ✅ API successfully connects to LocalStack
+- ✅ EC2 instances created (3 instances)
+- ✅ EBS volumes created (6 volumes: 3x8GB root + 3x500GB data)
+- ✅ VPC and networking configured
+- ✅ All resources visible in LocalStack
+
+**Verification**:
+```bash
+# Verified resources in LocalStack:
+- 3 EC2 instances (m5.2xlarge, running)
+- 6 EBS volumes (3x8GB gp2, 3x500GB gp3)
+- 1 VPC (10.0.0.0/16)
+- 1 Security Group
+```
+
+**Status**: ✅ Fixed - Commit [pending]
+
+---
+
+## UAT Session 5 Summary
+
+**Date**: 2026-04-05  
+**Tester**: User  
+**Focus**: AWS Provisioning (Step 3.6)
+
+### Issues Discovered
+- Issue #16: Provisioning JavaScript hardcoded URLs (Critical) - ✅ Fixed
+- Issue #17: Flask async support missing (Critical) - ✅ Fixed
+- Issue #18: LocalStack endpoint hardcoded (Critical) - ✅ Fixed
+
+### Issues Fixed
+- Issue #14: Provisioning proxy endpoints (from Session 4) - ✅ Verified working
+- Issue #15: Monitoring proxy endpoints (from Session 4) - ✅ Verified working
+
+### Test Results
+
+**Step 3.6: AWS Provisioning** - ✅ PASS
+- Configuration submitted successfully
+- TCO calculated correctly
+- Provisioning initiated successfully
+- Resources created in LocalStack:
+  - 3 EC2 instances (m5.2xlarge, 8 cores, 32GB RAM each)
+  - 6 EBS volumes (3x8GB root + 3x500GB data, gp3, 3000 IOPS)
+  - VPC and networking configured
+  - Security group created
+- No errors during provisioning
+- Provision ID generated and returned
+
+### Remaining Tests
+- Step 3.7: On-Premises IaaS Provisioning (Not tested)
+- Step 3.8: On-Premises CaaS Provisioning (Not tested)
+- Step 3.9: Monitoring Dashboard (Not tested)
+- Step 4: Security Testing (Not tested)
+- Step 5: Validation Testing (Not tested)
+- Step 6: API Testing (Not tested)
+
+### Overall Progress
+- **Completed**: 8/14 steps (57%)
+- **Critical Issues**: 0 open, 11 fixed
+- **Cosmetic Issues**: 4 open (deferred)
+- **Enhancement Requests**: 1 open (future)
+
+---
+

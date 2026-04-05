@@ -527,7 +527,7 @@
                 requestBody.environment_vars = environmentVars;
             }
             
-            const response = await fetch('http://localhost:8000/api/provision', {
+            const response = await fetch('/api/provision', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -568,7 +568,7 @@
             attempts++;
             
             try {
-                const response = await fetch(`http://localhost:8000/api/provision/${provisionId}/status`, {
+                const response = await fetch(`/api/provision/${provisionId}/status`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }

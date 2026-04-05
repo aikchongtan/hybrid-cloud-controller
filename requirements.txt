@@ -2,6 +2,8 @@
 #    uv pip compile requirements.piptools -o requirements.txt
 alembic==1.16.5
     # via -r requirements.piptools
+asgiref==3.11.1
+    # via flask async support
 attrs==25.4.0
     # via hypothesis
 bcrypt==5.0.0

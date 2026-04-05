@@ -490,7 +490,7 @@ The Q&A service works and returns responses, but has limited semantic understand
 ### Issue #14: All Provisioning Features Incomplete - Missing Proxy Endpoints
 **Priority**: Critical  
 **Severity**: Blocker (Feature Not Functional)  
-**Status**: Open - Requires Implementation
+**Status**: ✅ Fixed
 
 **Description**:
 All three provisioning features (AWS, On-Premises IaaS, On-Premises CaaS) fail with "Provisioning failed: Load failed" error. The Web UI provisioning pages render correctly, but the JavaScript cannot communicate with the API to start provisioning because there are no proxy endpoints in the Web UI to forward provisioning requests to the API service.
@@ -804,14 +804,32 @@ Check `packages/web_ui/templates/provisioning.html` to ensure JavaScript uses re
 
 **Screenshots**: Provided (shows "Provisioning failed: Load failed" error for both AWS and IaaS)
 
-**Status**: Open - Deferred to post-UAT remediation session
+**Status**: ✅ Fixed - Commit fd35a46
+
+**Fix Applied**:
+Added 3 proxy endpoints in `packages/web_ui/routes/provisioning.py`:
+1. `POST /api/provision` - Unified provisioning for AWS, IaaS, and CaaS
+2. `GET /api/provision/<provision_id>/status` - Check provisioning status
+3. `GET /api/provision/<provision_id>` - Get provisioning details
+
+All endpoints:
+- Validate authentication (session token required)
+- Forward requests to API service with Authorization header
+- Handle errors gracefully (504 timeout, 503 connection error, 401 auth failure)
+- Use appropriate timeouts (30s for POST, 10s for GET)
+- Include comprehensive logging
+
+**Testing**:
+- ✅ Bug condition tests: All provisioning endpoints now return non-404 responses
+- ✅ Preservation tests: Existing functionality unchanged
+- ✅ Web UI service restarted with new code
 
 ---
 
 ### Issue #15: Monitoring Dashboard Feature Incomplete - Missing Proxy Endpoints
 **Priority**: Critical  
 **Severity**: Blocker (Feature Not Functional)  
-**Status**: Open - Requires Implementation
+**Status**: ✅ Fixed
 
 **Description**:
 The monitoring dashboard fails to load with "Failed to load monitoring data. Please try again." error messages. The dashboard page renders correctly, but the JavaScript cannot communicate with the API to fetch monitoring data because there are no proxy endpoints in the Web UI to forward monitoring requests to the API service.
@@ -960,6 +978,24 @@ def get_resource_metrics(resource_id: str):
 
 **Screenshot**: Provided (shows multiple "Failed to load monitoring data" errors)
 
-**Status**: Open - Deferred to post-UAT remediation session
+**Status**: ✅ Fixed - Commit fd35a46
+
+**Fix Applied**:
+Added 2 proxy endpoints in `packages/web_ui/routes/monitoring.py`:
+1. `GET /api/monitoring/resources` - Get list of provisioned resources
+2. `GET /api/monitoring/<resource_id>/metrics` - Get metrics with optional time_range parameter
+
+All endpoints:
+- Validate authentication (session token required)
+- Forward requests to API service with Authorization header
+- Support time_range query parameter (1h, 24h, 7d)
+- Handle errors gracefully (504 timeout, 503 connection error, 401 auth failure)
+- Use 10s timeout for GET requests
+- Include comprehensive logging
+
+**Testing**:
+- ✅ Bug condition tests: All monitoring endpoints now return non-404 responses
+- ✅ Preservation tests: Existing functionality unchanged
+- ✅ Web UI service restarted with new code
 
 ---

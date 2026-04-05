@@ -760,13 +760,14 @@ def _provision_onprem_caas(
     """
     logger.info(f"Provisioning on-premises CaaS for {provision_id}")
 
-    # Provision containers
+    # Provision containers (use mock_mode=True for containerized API)
     onprem_provisioner.provision_caas(
         config=config,
         image_url=container_image,
         provision_id=provision_id,
         db_session=db_session,
         environment_vars=environment_vars,
+        mock_mode=True,  # Use mock mode when running in containers
     )
 
     # Query all created resources

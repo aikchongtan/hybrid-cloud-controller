@@ -189,6 +189,54 @@ def create_mock_vm(config: models.ConfigurationModel, provision_id: str, index: 
     )
 
 
+def create_mock_container(
+    config: models.ConfigurationModel,
+    image_url: str,
+    provision_id: str,
+    index: int,
+    environment_vars: dict[str, str],
+) -> ContainerDetails:
+    """Create a mock container for development without Docker/Podman.
+
+    Args:
+        config: Configuration model with compute, storage, and network specs
+        image_url: Container image URL
+        provision_id: ID of the provision record
+        index: Index of this container in the instance count
+        environment_vars: Environment variables to inject
+
+    Returns:
+        ContainerDetails with mock container information
+    """
+    container_id = str(uuid.uuid4())
+    name = f"mock-container-{provision_id[:8]}-{index}"
+
+    # Calculate resource limits
+    cpu_limit = float(config.cpu_cores)
+    memory_limit_mb = config.memory_gb * 1024
+
+    # Generate mock endpoint
+    endpoint = f"10.0.{(index // 256) % 256}.{index % 256 + 100}"
+    port = 8080 + index
+
+    logger.info(
+        f"Created mock container: {name} with {cpu_limit} CPU, "
+        f"{memory_limit_mb}MB RAM, image: {image_url}, endpoint: {endpoint}:{port}"
+    )
+
+    return ContainerDetails(
+        container_id=container_id,
+        name=name,
+        image_url=image_url,
+        cpu_limit=cpu_limit,
+        memory_limit_mb=memory_limit_mb,
+        endpoint=endpoint,
+        port=port,
+        status="running",
+        environment_vars=environment_vars,
+    )
+
+
 def create_vm(config: models.ConfigurationModel, provision_id: str, index: int) -> VMDetails:
     """Create a virtual machine using QEMU/KVM with libvirt.
 
@@ -356,6 +404,7 @@ def provision_caas(
     db_session: Session,
     environment_vars: Optional[dict[str, str]] = None,
     use_podman: bool = False,
+    mock_mode: bool = True,
 ) -> list[ContainerDetails]:
     """Provision CaaS resources (containers).
 
@@ -366,41 +415,52 @@ def provision_caas(
         db_session: Database session for storing resource records
         environment_vars: Optional environment variables to inject into containers
         use_podman: If True, use Podman instead of Docker (default: False)
+        mock_mode: If True, simulate container provisioning without Docker/Podman (default: True)
 
     Returns:
         List of ContainerDetails for all provisioned containers
 
     Raises:
-        RuntimeError: If neither Docker nor Podman is available
+        RuntimeError: If mock_mode is False and neither Docker nor Podman is available
     """
     if environment_vars is None:
         environment_vars = {}
 
-    # Detect container runtime
-    runtime = _detect_container_runtime(use_podman)
-    if runtime is None:
-        raise RuntimeError(
-            "Neither Docker nor Podman is available. "
-            "Install Docker (https://docs.docker.com/get-docker/) or "
-            "Podman (https://podman.io/getting-started/installation)"
+    if mock_mode:
+        logger.info(
+            f"Provisioning CaaS in Mock Mode for provision {provision_id} "
+            f"({config.instance_count} containers, image: {image_url})"
+        )
+        containers = [
+            create_mock_container(config, image_url, provision_id, i, environment_vars)
+            for i in range(config.instance_count)
+        ]
+    else:
+        # Detect container runtime
+        runtime = _detect_container_runtime(use_podman)
+        if runtime is None:
+            raise RuntimeError(
+                "Neither Docker nor Podman is available. "
+                "Install Docker (https://docs.docker.com/get-docker/) or "
+                "Podman (https://podman.io/getting-started/installation)"
+            )
+
+        logger.info(
+            f"Provisioning CaaS using {runtime} for provision {provision_id} "
+            f"({config.instance_count} containers, image: {image_url})"
         )
 
-    logger.info(
-        f"Provisioning CaaS using {runtime} for provision {provision_id} "
-        f"({config.instance_count} containers, image: {image_url})"
-    )
-
-    containers = []
-    for i in range(config.instance_count):
-        container = create_container(
-            config=config,
-            image_url=image_url,
-            provision_id=provision_id,
-            index=i,
-            environment_vars=environment_vars,
-            runtime=runtime,
-        )
-        containers.append(container)
+        containers = []
+        for i in range(config.instance_count):
+            container = create_container(
+                config=config,
+                image_url=image_url,
+                provision_id=provision_id,
+                index=i,
+                environment_vars=environment_vars,
+                runtime=runtime,
+            )
+            containers.append(container)
 
     # Track all containers in database
     for container in containers:

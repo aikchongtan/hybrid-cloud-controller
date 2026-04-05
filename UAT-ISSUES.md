@@ -1214,3 +1214,81 @@ Could not connect to the endpoint URL: "http://localhost:4566/"
 
 ---
 
+
+## UAT Session 6 Summary
+
+**Date**: 2026-04-05  
+**Tester**: User  
+**Focus**: On-Premises IaaS Provisioning (Step 3.7)
+
+### Test Results
+
+**Step 3.7: On-Premises IaaS Provisioning** - ✅ PASS
+
+**Provision Details:**
+- Provision ID: `a83613bb-8f75-4a90-a6d3-b3cf94d4c543`
+- Cloud Path: `on_prem_iaas`
+- Status: `completed`
+- Created At: 2026-04-05 09:36:26
+
+**Configuration Used:**
+- CPU Cores: 8 ✅
+- Memory: 32 GB ✅
+- Instance Count: 3 ✅
+- Storage Type: SSD ✅
+- Storage Capacity: 500 GB ✅
+
+**Resources Created:**
+- 3 Ubuntu VMs successfully provisioned
+- All VMs in `running` state
+- Sequential IP addressing (10.0.0.1, 10.0.0.2, 10.0.0.3)
+- SSH connection details provided for each VM:
+  - Port: 22
+  - Username: ubuntu
+  - Password: Generated (secure, unique per VM)
+
+**Verification:**
+✅ Provisioning completed without errors
+✅ Correct number of VMs created (3 instances)
+✅ VM specifications match configuration (8 cores, 32GB RAM each)
+✅ SSH connection details provided (IP, port, username, password)
+✅ All VMs in running state
+✅ Resources properly tracked in database
+✅ Mock Mode worked correctly (simulated VMs)
+
+**Issues Discovered:**
+- None - IaaS provisioning worked perfectly on first attempt
+
+**Notes:**
+- Mock Mode was used (simulated VMs, no real infrastructure)
+- VMs are Ubuntu-based
+- Each VM has unique secure credentials
+- IP addresses in private subnet (10.0.0.0/24)
+- No additional fixes required
+
+### Overall Progress Update
+
+**Completed Steps**: 9/14 (64%)
+1. ✅ Step 1: Start Application
+2. ✅ Step 2: Verify Services
+3. ✅ Step 3.1: User Registration
+4. ✅ Step 3.2: User Login
+5. ✅ Step 3.3: Submit Configuration
+6. ✅ Step 3.4: Review TCO Results
+7. ✅ Step 3.5: Q&A Service
+8. ✅ Step 3.6: AWS Provisioning
+9. ✅ Step 3.7: On-Premises IaaS Provisioning
+
+**Remaining Steps**: 5/14 (36%)
+- Step 3.8: On-Premises CaaS Provisioning
+- Step 3.9: Monitoring Dashboard
+- Step 4: Security Testing
+- Step 5: Validation Testing
+- Step 6: API Testing
+
+**Critical Issues**: 0 open, 11 fixed ✅
+**Cosmetic Issues**: 4 open (deferred)
+**Enhancement Requests**: 1 open (future)
+
+---
+

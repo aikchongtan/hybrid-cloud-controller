@@ -104,6 +104,120 @@ docker-compose down
 docker-compose down -v
 ```
 
+## Configuration Guide
+
+### Understanding Endpoint Configuration
+
+The application uses different endpoint configurations depending on whether services communicate **within Docker** (inter-container) or from **outside Docker** (your browser or host machine).
+
+#### Docker Service Names vs Localhost
+
+**Rule of Thumb:**
+- **Inter-container communication** (Container → Container): Use Docker service names
+- **External access** (Browser → Container): Use `localhost`
+
+#### Endpoint Configuration Table
+
+| Purpose | Environment Variable | Docker Compose Value | Local Development Value | Used By | Connects To |
+|---------|---------------------|---------------------|------------------------|---------|-------------|
+| **Database** | `DATABASE_URL` | `postgresql://...@database:5432/...` | `postgresql://...@localhost:5432/...` | API, Web UI | PostgreSQL |
+| **LocalStack** | `LOCALSTACK_ENDPOINT` | `http://localstack:4566` | `http://localhost:4566` | API | LocalStack |
+| **API Service** | `API_BASE_URL` | `http://api:10000` | `http://localhost:10000` | Web UI | API |
+
+#### Why This Matters
+
+**Docker Networking:**
+- Inside Docker Compose, containers are on a private network
+- Each service has a hostname matching its service name (e.g., `database`, `api`, `localstack`)
+- Using `localhost` inside a container refers to **that container itself**, not other services
+
+**External Access:**
+- Your browser and host machine are **outside** the Docker network
+- Docker Compose maps container ports to your host machine
+- You access services via `localhost:<port>` from your browser
+
+#### Configuration Examples
+
+**✅ Correct - Docker Compose (.env for containers):**
+```bash
+DATABASE_URL=postgresql://hybrid_cloud_user:password@database:5432/hybrid_cloud
+LOCALSTACK_ENDPOINT=http://localstack:4566
+API_BASE_URL=http://api:10000
+```
+
+**✅ Correct - Local Development (.env for host):**
+```bash
+DATABASE_URL=postgresql://hybrid_cloud_user:password@localhost:5432/hybrid_cloud
+LOCALSTACK_ENDPOINT=http://localhost:4566
+API_BASE_URL=http://localhost:10000
+```
+
+**❌ Incorrect - Mixed configuration:**
+```bash
+# Don't mix Docker service names with localhost!
+DATABASE_URL=postgresql://...@localhost:5432/...  # Wrong for Docker
+LOCALSTACK_ENDPOINT=http://localstack:4566        # Correct
+API_BASE_URL=http://localhost:10000               # Wrong for Docker
+```
+
+#### Browser Access (Always localhost)
+
+From your browser or host machine, always use `localhost`:
+- Web UI: `http://localhost:10001`
+- API (direct): `http://localhost:10000`
+- LocalStack (direct): `http://localhost:4566`
+- Database (direct): `localhost:5432`
+
+#### Quick Reference
+
+**When to use Docker service names:**
+- ✅ API connecting to Database → `database:5432`
+- ✅ API connecting to LocalStack → `localstack:4566`
+- ✅ Web UI connecting to API → `api:10000`
+
+**When to use localhost:**
+- ✅ Browser accessing Web UI → `localhost:10001`
+- ✅ curl/Postman testing API → `localhost:10000`
+- ✅ psql connecting to database → `localhost:5432`
+
+### Environment Variables Reference
+
+The `.env.example` file is pre-configured for Docker Compose. Copy it to `.env`:
+
+```bash
+cp .env.example .env
+```
+
+**For Docker Compose (default):** No changes needed - the example file uses Docker service names.
+
+**For local development:** Update these variables to use `localhost`:
+```bash
+DATABASE_URL=postgresql://hybrid_cloud_user:dev_password_change_me@localhost:5432/hybrid_cloud
+LOCALSTACK_ENDPOINT=http://localhost:4566
+API_BASE_URL=http://localhost:10000
+```
+
+### Verifying Configuration
+
+After starting services, verify connectivity:
+
+```bash
+# Check all services are running
+docker-compose ps
+
+# Test API health (from host)
+curl http://localhost:10000/api/health
+
+# Test LocalStack health (from host)
+curl http://localhost:4566/_localstack/health
+
+# Test database connection (from host)
+psql -h localhost -p 5432 -U hybrid_cloud_user -d hybrid_cloud
+
+# Test inter-container connectivity (from inside API container)
+docker-compose exec api curl http://localstack:4566/_localstack/health
+```
+
 ## Local Development Setup
 
 For local development without Docker:

@@ -486,3 +486,228 @@ The Q&A service works and returns responses, but has limited semantic understand
 **Note**: Q&A service is functional and working correctly - this is a feature enhancement request, not a bug
 
 ---
+
+### Issue #14: AWS Provisioning Feature Incomplete - Missing Proxy Endpoints
+**Priority**: Critical  
+**Severity**: Blocker (Feature Not Functional)  
+**Status**: Open - Requires Implementation
+
+**Description**:
+The AWS provisioning feature fails with "Provisioning failed: Load failed" error. The Web UI provisioning page renders correctly, but the JavaScript cannot communicate with the API to start provisioning because there are no proxy endpoints in the Web UI to forward provisioning requests to the API service.
+
+**Location**: 
+- `packages/web_ui/routes/provisioning.py` (missing proxy endpoints)
+- `packages/web_ui/templates/provisioning.html` (JavaScript makes API calls)
+
+**User Journey**:
+1. User navigates to home page
+2. Clicks "Provision Resources" button
+3. Selects AWS Cloud Emulator
+4. Enters container image URL (e.g., `nginx:latest`)
+5. Enters environment variables (optional)
+6. Clicks "Start Provisioning"
+7. **ERROR**: "Provisioning failed: Load failed"
+
+**Root Cause**:
+- Web UI only has `GET /provision/<config_id>` endpoint (renders page)
+- No proxy endpoints to forward provisioning API calls:
+  - `POST /api/provision/aws` - Start AWS provisioning
+  - `GET /api/provision/<provision_id>/status` - Check provisioning status
+  - `GET /api/provision/<provision_id>` - Get provisioning details
+- JavaScript tries to call API directly, which fails due to authentication/CORS
+- Similar to Issues #10 and #11 (Q&A and validation proxy endpoints)
+
+**Expected Behavior**:
+1. User submits provisioning request
+2. Web UI forwards request to API with authentication token
+3. API provisions resources in LocalStack:
+   - EC2 instances (based on config: 3 instances, 8 cores, 32GB RAM)
+   - EBS volumes (500GB SSD, 3000 IOPS)
+   - S3 buckets (for object storage)
+   - Network configuration (10Gbps bandwidth)
+   - Deploy container image on provisioned infrastructure
+4. User sees provisioning progress/status
+5. Success message when provisioning completes
+
+**Actual Behavior**:
+- Provisioning request fails immediately
+- Error message: "Provisioning failed: Load failed"
+- No resources created in LocalStack
+- API logs show authentication errors (401)
+
+**API Logs**:
+```
+Authentication error: 401 Unauthorized: Invalid or expired session
+HTTP error 401: AUTHENTICATION_REQUIRED - Authentication failed
+```
+
+**Required Implementation**:
+
+### 1. Add Web UI Proxy Endpoints
+File: `packages/web_ui/routes/provisioning.py`
+
+Add the following proxy endpoints:
+
+```python
+import os
+import requests
+from flask import jsonify, request
+
+API_BASE_URL = os.getenv("API_BASE_URL", "http://api:10000")
+
+@bp.route("/api/provision/aws", methods=["POST"])
+def provision_aws():
+    """
+    Proxy endpoint for starting AWS provisioning.
+    
+    POST: Forward provisioning request to API
+    """
+    token = session.get("token")
+    if not token:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    try:
+        data = request.get_json()
+        
+        response = requests.post(
+            f"{API_BASE_URL}/api/provision/aws",
+            json=data,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        
+        return jsonify(response.json()), response.status_code
+        
+    except requests.exceptions.Timeout:
+        logger.error("API request timeout during AWS provisioning")
+        return jsonify({"error": "Request timeout"}), 504
+    
+    except requests.exceptions.ConnectionError:
+        logger.error("API connection error during AWS provisioning")
+        return jsonify({"error": "Unable to connect to service"}), 503
+    
+    except Exception as e:
+        logger.error(f"Unexpected error during AWS provisioning: {e}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+
+
+@bp.route("/api/provision/<provision_id>/status", methods=["GET"])
+def provision_status(provision_id: str):
+    """
+    Proxy endpoint for checking provisioning status.
+    
+    GET: Forward status request to API
+    """
+    token = session.get("token")
+    if not token:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/api/provision/{provision_id}/status",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        
+        return jsonify(response.json()), response.status_code
+        
+    except requests.exceptions.Timeout:
+        logger.error("API request timeout during status check")
+        return jsonify({"error": "Request timeout"}), 504
+    
+    except requests.exceptions.ConnectionError:
+        logger.error("API connection error during status check")
+        return jsonify({"error": "Unable to connect to service"}), 503
+    
+    except Exception as e:
+        logger.error(f"Unexpected error during status check: {e}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+
+
+@bp.route("/api/provision/<provision_id>", methods=["GET"])
+def provision_details(provision_id: str):
+    """
+    Proxy endpoint for getting provisioning details.
+    
+    GET: Forward details request to API
+    """
+    token = session.get("token")
+    if not token:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/api/provision/{provision_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        
+        return jsonify(response.json()), response.status_code
+        
+    except requests.exceptions.Timeout:
+        logger.error("API request timeout during details retrieval")
+        return jsonify({"error": "Request timeout"}), 504
+    
+    except requests.exceptions.ConnectionError:
+        logger.error("API connection error during details retrieval")
+        return jsonify({"error": "Unable to connect to service"}), 503
+    
+    except Exception as e:
+        logger.error(f"Unexpected error during details retrieval: {e}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+```
+
+### 2. Verify API Endpoints Exist
+Check that these endpoints are implemented in `packages/api/routes/provisioning.py`:
+- `POST /api/provision/aws` - Start AWS provisioning
+- `GET /api/provision/<provision_id>/status` - Get status
+- `GET /api/provision/<provision_id>` - Get details
+
+### 3. Test with LocalStack
+Verify that:
+- LocalStack is running and healthy
+- API can connect to LocalStack at `http://localstack:4566`
+- EC2, EBS, S3, and ECS services are available in LocalStack
+
+### 4. Update JavaScript (if needed)
+Check `packages/web_ui/templates/provisioning.html` to ensure JavaScript uses relative URLs:
+- Should call `/api/provision/aws` (not `http://localhost:8000/api/provision/aws`)
+- Should call `/api/provision/<id>/status` for status polling
+
+**Test Data for Remediation**:
+- Config ID: Use any valid configuration from database
+- Container Image: `nginx:latest`
+- Environment Variables: `{"NGINX_PORT": "80"}` (optional)
+- Expected Infrastructure:
+  - 3 EC2 instances (8 cores, 32GB RAM each)
+  - 500GB SSD EBS volumes with 3000 IOPS
+  - S3 buckets for object storage
+  - 10Gbps network bandwidth
+
+**Estimated Fix Time**: 1-1.5 hours
+- Add proxy endpoints: 30-45 minutes
+- Verify API endpoints: 15-20 minutes
+- Test end-to-end: 20-30 minutes
+
+**Dependencies**:
+- LocalStack must be running and healthy
+- API provisioning routes must be implemented
+- Authentication middleware must be working
+
+**Related Issues**:
+- Similar to Issue #10 (Q&A proxy endpoints)
+- Similar to Issue #11 (Configuration validation proxy endpoint)
+- Pattern: Web UI needs proxy endpoints for all API calls
+
+**Workaround**: None - feature is non-functional
+
+**Impact**: 
+- Users cannot provision AWS resources
+- Cannot test full user workflow (Analyze → Provision → Monitor)
+- Monitoring feature may depend on provisioned resources
+
+**Screenshot**: Provided (shows "Provisioning failed: Load failed" error)
+
+**Status**: Open - Deferred to post-UAT remediation session
+
+---

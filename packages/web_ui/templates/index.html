@@ -55,7 +55,11 @@
                 <div class="content">
                     Select your preferred cloud path and provision resources automatically. Supports AWS (via LocalStack), IaaS, and CaaS deployments.
                     <br>
-                    <a href="#" class="button is-success mt-3">Provision Resources</a>
+                    {% if session.get('config_id') %}
+                    <a href="{{ url_for('provisioning.provision_page', config_id=session.get('config_id')) }}" class="button is-success mt-3">Provision Resources</a>
+                    {% else %}
+                    <a href="{{ url_for('configuration.configuration_input') }}" class="button is-success mt-3">Create Configuration First</a>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -78,7 +82,7 @@
                 <div class="content">
                     Monitor your provisioned application's operational statistics including CPU, memory, storage, and network utilization.
                     <br>
-                    <a href="#" class="button is-warning mt-3">View Dashboard</a>
+                    <a href="{{ url_for('monitoring.monitoring_dashboard') }}" class="button is-warning mt-3">View Dashboard</a>
                 </div>
             </div>
         </div>

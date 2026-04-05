@@ -487,13 +487,18 @@ The Q&A service works and returns responses, but has limited semantic understand
 
 ---
 
-### Issue #14: AWS Provisioning Feature Incomplete - Missing Proxy Endpoints
+### Issue #14: All Provisioning Features Incomplete - Missing Proxy Endpoints
 **Priority**: Critical  
 **Severity**: Blocker (Feature Not Functional)  
 **Status**: Open - Requires Implementation
 
 **Description**:
-The AWS provisioning feature fails with "Provisioning failed: Load failed" error. The Web UI provisioning page renders correctly, but the JavaScript cannot communicate with the API to start provisioning because there are no proxy endpoints in the Web UI to forward provisioning requests to the API service.
+All three provisioning features (AWS, On-Premises IaaS, On-Premises CaaS) fail with "Provisioning failed: Load failed" error. The Web UI provisioning pages render correctly, but the JavaScript cannot communicate with the API to start provisioning because there are no proxy endpoints in the Web UI to forward provisioning requests to the API service.
+
+**Affected Features**:
+- AWS Cloud Emulator (LocalStack) provisioning
+- On-Premises IaaS (Virtual Machines) provisioning
+- On-Premises CaaS (Containers) provisioning
 
 **Location**: 
 - `packages/web_ui/routes/provisioning.py` (missing proxy endpoints)
@@ -546,7 +551,77 @@ HTTP error 401: AUTHENTICATION_REQUIRED - Authentication failed
 ### 1. Add Web UI Proxy Endpoints
 File: `packages/web_ui/routes/provisioning.py`
 
-Add the following proxy endpoints:
+Add proxy endpoints for all three provisioning types:
+
+**A. AWS Provisioning:**
+```python
+@bp.route("/api/provision/aws", methods=["POST"])
+def provision_aws():
+    # Forward AWS provisioning request to API
+    # (See full implementation in Issue #14 details above)
+```
+
+**B. On-Premises IaaS Provisioning:**
+```python
+@bp.route("/api/provision/iaas", methods=["POST"])
+def provision_iaas():
+    """
+    Proxy endpoint for starting IaaS provisioning.
+    
+    POST: Forward provisioning request to API
+    """
+    token = session.get("token")
+    if not token:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    try:
+        data = request.get_json()
+        
+        response = requests.post(
+            f"{API_BASE_URL}/api/provision/iaas",
+            json=data,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        
+        return jsonify(response.json()), response.status_code
+        
+    except Exception as e:
+        logger.error(f"Unexpected error during IaaS provisioning: {e}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+```
+
+**C. On-Premises CaaS Provisioning:**
+```python
+@bp.route("/api/provision/caas", methods=["POST"])
+def provision_caas():
+    """
+    Proxy endpoint for starting CaaS provisioning.
+    
+    POST: Forward provisioning request to API
+    """
+    token = session.get("token")
+    if not token:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    try:
+        data = request.get_json()
+        
+        response = requests.post(
+            f"{API_BASE_URL}/api/provision/caas",
+            json=data,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        
+        return jsonify(response.json()), response.status_code
+        
+    except Exception as e:
+        logger.error(f"Unexpected error during CaaS provisioning: {e}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+```
+
+**Common Status/Details Endpoints** (shared by all provisioning types):
 
 ```python
 import os
@@ -660,8 +735,10 @@ def provision_details(provision_id: str):
 ### 2. Verify API Endpoints Exist
 Check that these endpoints are implemented in `packages/api/routes/provisioning.py`:
 - `POST /api/provision/aws` - Start AWS provisioning
-- `GET /api/provision/<provision_id>/status` - Get status
-- `GET /api/provision/<provision_id>` - Get details
+- `POST /api/provision/iaas` - Start IaaS provisioning  
+- `POST /api/provision/caas` - Start CaaS provisioning
+- `GET /api/provision/<provision_id>/status` - Get status (all types)
+- `GET /api/provision/<provision_id>` - Get details (all types)
 
 ### 3. Test with LocalStack
 Verify that:
@@ -675,19 +752,32 @@ Check `packages/web_ui/templates/provisioning.html` to ensure JavaScript uses re
 - Should call `/api/provision/<id>/status` for status polling
 
 **Test Data for Remediation**:
+
+**AWS Provisioning:**
 - Config ID: Use any valid configuration from database
 - Container Image: `nginx:latest`
 - Environment Variables: `{"NGINX_PORT": "80"}` (optional)
-- Expected Infrastructure:
-  - 3 EC2 instances (8 cores, 32GB RAM each)
-  - 500GB SSD EBS volumes with 3000 IOPS
-  - S3 buckets for object storage
+
+**IaaS Provisioning:**
+- Config ID: Use any valid configuration from database
+- Mock Mode: Checked (for testing - no real VMs created)
+- Expected: Simulated VM provisioning with SSH details
+
+**CaaS Provisioning:**
+- Config ID: Use any valid configuration from database
+- Container Image: `nginx:latest`
+- Environment Variables: `{"NGINX_PORT": "80"}` (optional)
+
+**Expected Infrastructure (from config):**
+  - 3 instances (8 cores, 32GB RAM each)
+  - 500GB SSD storage with 3000 IOPS
   - 10Gbps network bandwidth
 
-**Estimated Fix Time**: 1-1.5 hours
-- Add proxy endpoints: 30-45 minutes
-- Verify API endpoints: 15-20 minutes
-- Test end-to-end: 20-30 minutes
+**Estimated Fix Time**: 2-3 hours
+- Add proxy endpoints for all 3 types: 45-60 minutes
+- Verify API endpoints exist: 20-30 minutes
+- Test all 3 provisioning types: 45-60 minutes
+- Fix any integration issues: 30 minutes buffer
 
 **Dependencies**:
 - LocalStack must be running and healthy
@@ -702,11 +792,173 @@ Check `packages/web_ui/templates/provisioning.html` to ensure JavaScript uses re
 **Workaround**: None - feature is non-functional
 
 **Impact**: 
-- Users cannot provision AWS resources
+- Users cannot provision any resources (AWS, IaaS, or CaaS)
 - Cannot test full user workflow (Analyze → Provision → Monitor)
 - Monitoring feature may depend on provisioned resources
+- All three provisioning paths are blocked
 
-**Screenshot**: Provided (shows "Provisioning failed: Load failed" error)
+**UAT Testing Results**:
+- ❌ AWS Cloud Emulator: Failed with "Load failed" error
+- ❌ On-Premises IaaS: Failed with "Load failed" error (tested with Mock Mode)
+- ⚠️ On-Premises CaaS: Not tested (assumed same issue)
+
+**Screenshots**: Provided (shows "Provisioning failed: Load failed" error for both AWS and IaaS)
+
+**Status**: Open - Deferred to post-UAT remediation session
+
+---
+
+### Issue #15: Monitoring Dashboard Feature Incomplete - Missing Proxy Endpoints
+**Priority**: Critical  
+**Severity**: Blocker (Feature Not Functional)  
+**Status**: Open - Requires Implementation
+
+**Description**:
+The monitoring dashboard fails to load with "Failed to load monitoring data. Please try again." error messages. The dashboard page renders correctly, but the JavaScript cannot communicate with the API to fetch monitoring data because there are no proxy endpoints in the Web UI to forward monitoring requests to the API service.
+
+**Location**: 
+- `packages/web_ui/routes/monitoring.py` (missing proxy endpoints)
+- `packages/web_ui/templates/monitoring.html` (JavaScript makes API calls)
+
+**User Journey**:
+1. User navigates to home page
+2. Clicks "View Dashboard" button
+3. Monitoring dashboard page loads
+4. **ERROR**: Multiple "Failed to load monitoring data. Please try again." error messages
+5. No metrics or resource data displayed
+
+**Root Cause**:
+- Web UI only has `GET /monitoring` endpoint (renders page)
+- No proxy endpoints to forward monitoring API calls:
+  - `GET /api/monitoring/resources` - Get list of provisioned resources
+  - `GET /api/monitoring/<resource_id>/metrics` - Get metrics for specific resource
+  - `GET /api/monitoring/<resource_id>/metrics?time_range=<range>` - Get metrics for time range
+- JavaScript tries to call API directly, which fails due to authentication/CORS
+- Same pattern as Issues #10, #11, and #14
+
+**Expected Behavior**:
+1. Dashboard loads successfully
+2. Shows list of provisioned resources
+3. Displays metrics for each resource:
+   - CPU utilization
+   - Memory usage
+   - Storage capacity and usage
+   - Network bandwidth and transfer
+4. Time range selector works (Current, 1 Hour, 24 Hours, 7 Days)
+5. Auto-refresh every 30 seconds
+
+**Actual Behavior**:
+- Dashboard page renders but shows error messages
+- No resource data loaded
+- No metrics displayed
+- Error: "Failed to load monitoring data. Please try again."
+
+**Required Implementation**:
+
+### Add Web UI Proxy Endpoints
+File: `packages/web_ui/routes/monitoring.py`
+
+```python
+import os
+import requests
+from flask import jsonify, request
+
+API_BASE_URL = os.getenv("API_BASE_URL", "http://api:10000")
+
+@bp.route("/api/monitoring/resources", methods=["GET"])
+def get_resources():
+    """
+    Proxy endpoint for getting list of provisioned resources.
+    
+    GET: Forward request to API
+    """
+    token = session.get("token")
+    if not token:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/api/monitoring/resources",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        
+        return jsonify(response.json()), response.status_code
+        
+    except requests.exceptions.Timeout:
+        logger.error("API request timeout during resource list retrieval")
+        return jsonify({"error": "Request timeout"}), 504
+    
+    except requests.exceptions.ConnectionError:
+        logger.error("API connection error during resource list retrieval")
+        return jsonify({"error": "Unable to connect to service"}), 503
+    
+    except Exception as e:
+        logger.error(f"Unexpected error during resource list retrieval: {e}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+
+
+@bp.route("/api/monitoring/<resource_id>/metrics", methods=["GET"])
+def get_resource_metrics(resource_id: str):
+    """
+    Proxy endpoint for getting resource metrics.
+    
+    GET: Forward request to API with optional time_range parameter
+    """
+    token = session.get("token")
+    if not token:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    try:
+        # Get time_range query parameter if provided
+        time_range = request.args.get('time_range', 'current')
+        
+        response = requests.get(
+            f"{API_BASE_URL}/api/monitoring/{resource_id}/metrics",
+            params={"time_range": time_range},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        
+        return jsonify(response.json()), response.status_code
+        
+    except requests.exceptions.Timeout:
+        logger.error("API request timeout during metrics retrieval")
+        return jsonify({"error": "Request timeout"}), 504
+    
+    except requests.exceptions.ConnectionError:
+        logger.error("API connection error during metrics retrieval")
+        return jsonify({"error": "Unable to connect to service"}), 503
+    
+    except Exception as e:
+        logger.error(f"Unexpected error during metrics retrieval: {e}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+```
+
+**Dependencies**:
+- May require provisioned resources to exist (Issue #14 must be fixed first)
+- API monitoring endpoints must be implemented
+- Authentication middleware must be working
+
+**Estimated Fix Time**: 30-45 minutes
+- Add proxy endpoints: 20-30 minutes
+- Test with mock data: 10-15 minutes
+
+**Note**: This feature may not be fully testable until provisioning (Issue #14) is fixed, as monitoring likely depends on having provisioned resources.
+
+**Related Issues**:
+- Issue #10: Q&A proxy endpoints
+- Issue #11: Configuration validation proxy endpoint
+- Issue #14: Provisioning proxy endpoints
+- **Pattern**: All API-dependent features need Web UI proxy endpoints
+
+**Impact**: 
+- Users cannot view monitoring dashboard
+- Cannot track resource metrics
+- Cannot monitor provisioned infrastructure
+- Full user workflow (Analyze → Provision → Monitor) is broken
+
+**Screenshot**: Provided (shows multiple "Failed to load monitoring data" errors)
 
 **Status**: Open - Deferred to post-UAT remediation session
 

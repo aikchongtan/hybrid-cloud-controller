@@ -1450,16 +1450,140 @@ Install Docker (https://docs.docker.com/get-docker/) or Podman (https://podman.i
 8. ✅ Step 3.6: AWS Provisioning
 9. ✅ Step 3.7: On-Premises IaaS Provisioning
 10. ✅ Step 3.8: On-Premises CaaS Provisioning
+11. ✅ Step 3.9: Monitoring Dashboard
 
-**Remaining Steps**: 4/14 (29%)
-- Step 3.9: Monitoring Dashboard
+**Remaining Steps**: 3/14 (21%)
 - Step 4: Security Testing
 - Step 5: Validation Testing
 - Step 6: API Testing
 
-**Critical Issues**: 0 open, 12 fixed ✅
+**Critical Issues**: 0 open, 13 fixed ✅
 **Cosmetic Issues**: 4 open (deferred)
 **Enhancement Requests**: 1 open (future)
+
+---
+
+### Issue #20: Monitoring Metrics Collection Not Running Continuously
+**Priority**: Critical  
+**Severity**: Blocker (Feature Not Functional)  
+**Status**: ✅ Fixed
+
+**Description**:
+The monitoring dashboard initially loaded and displayed resources, but all resources showed as "unreachable" after 2 minutes. Resources would briefly show as "healthy" after manual metric collection, but would revert to "unreachable" after 30 seconds.
+
+**Location**: `packages/api/app.py`
+
+**Root Cause**:
+The monitoring system has a background collector that should continuously collect metrics every 30 seconds for all provisioned resources. However, this collector was never started automatically when the API service initialized. The health check considers resources "unreachable" if metrics are older than 2 minutes, so without continuous collection, all resources would eventually show as unreachable.
+
+**Expected Behavior**:
+1. When API service starts, monitoring collector should automatically start
+2. Collector should run in background thread, collecting metrics every 30 seconds
+3. Resources should remain "healthy" as long as metrics are fresh (< 2 minutes old)
+4. Dashboard should display current metrics for all resources
+5. Metrics should auto-refresh without manual intervention
+
+**Actual Behavior**:
+- Monitoring collector was not started on API initialization
+- Metrics were only collected when manually triggered
+- Resources showed as "healthy" briefly, then "unreachable" after 2 minutes
+- Dashboard required manual metric collection to display data
+
+**Fix Applied**:
+Added automatic monitoring collection startup in `packages/api/app.py`:
+
+1. Created `_start_monitoring_collection()` function that:
+   - Queries all provisioned resources from database
+   - Starts background collector thread with 30-second interval
+   - Handles errors gracefully without failing app startup
+
+2. Called `_start_monitoring_collection()` during API initialization (after database init)
+
+3. Collector now runs continuously as daemon thread, collecting metrics for all resources every 30 seconds
+
+**Code Changes**:
+```python
+# packages/api/app.py
+
+from packages.monitoring import collector
+from packages.database.models import ResourceModel
+
+def _start_monitoring_collection() -> None:
+    """Start background monitoring metrics collection for all resources."""
+    global _monitoring_thread
+    
+    try:
+        db = get_session()
+        
+        try:
+            resources = db.query(ResourceModel).all()
+            resource_ids = [resource.id for resource in resources]
+            
+            if not resource_ids:
+                logger.info("No resources found, skipping monitoring collection startup")
+                return
+            
+            logger.info(f"Starting monitoring collection for {len(resource_ids)} resources...")
+            
+            _monitoring_thread = collector.start_collection(
+                resource_ids=resource_ids,
+                db_session=db,
+                interval_seconds=30
+            )
+            
+            logger.info(f"Monitoring collection started successfully (30s interval)")
+            
+        finally:
+            pass  # Don't close session - collector thread needs it
+            
+    except Exception as e:
+        logger.error(f"Failed to start monitoring collection: {e}", exc_info=True)
+        logger.warning("Continuing without monitoring collection")
+
+def create_app(config: dict[str, Any] | None = None) -> Flask:
+    # ... existing code ...
+    
+    if database_url:
+        logger.info("Initializing database...")
+        init_database(database_url)
+        create_tables()
+        logger.info("Database initialized successfully")
+        
+        # Start monitoring metrics collection
+        _start_monitoring_collection()  # <-- Added this line
+    
+    # ... rest of app initialization ...
+```
+
+**Testing**:
+- ✅ API service restarted with new code
+- ✅ Monitoring collector started automatically on API initialization
+- ✅ Metrics collected every 30 seconds for all 15 resources
+- ✅ All resources show as "healthy" on dashboard
+- ✅ Resources remain "healthy" continuously (no "unreachable" status)
+- ✅ Dashboard displays current metrics for all resources
+- ✅ Time range selector works (Current, 1 Hour, 24 Hours, 7 Days)
+- ✅ Metrics auto-refresh every 30 seconds
+
+**UAT Testing Results**:
+- ✅ Dashboard loads successfully without errors
+- ✅ All 15 resources displayed (3 EC2, 3 EBS, 3 VMs, 3 containers, 3 networking)
+- ✅ All resources show "healthy" status with green checkmarks
+- ✅ Metrics display correctly: CPU, Memory, Storage, Network
+- ✅ Timestamps are current and update automatically
+- ✅ Time range selector works for all ranges (Current, 1 Hour, 24 Hours, 7 Days)
+- ✅ Resources remain healthy continuously (tested for multiple minutes)
+
+**Status**: ✅ Fixed - Commit pending
+
+**Files Modified**:
+- `packages/api/app.py` - Added automatic monitoring collection startup
+
+**Impact**: 
+- Monitoring dashboard now fully functional
+- Resources display correct health status continuously
+- No manual intervention required for metric collection
+- Step 3.9 (Monitoring Dashboard) UAT test passed
 
 ---
 

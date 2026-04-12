@@ -8,10 +8,58 @@ from flask import Flask, request
 from werkzeug.exceptions import HTTPException
 
 from packages.api.middleware import auth, error_handler, https_enforcement
-from packages.database import init_database, create_tables
+from packages.database import init_database, create_tables, get_session
+from packages.database.models import ResourceModel
+from packages.monitoring import collector
 
 # Configure logging
 logger = logging.getLogger("hybrid_cloud.api")
+
+# Global variable to store the monitoring collection thread
+_monitoring_thread = None
+
+
+def _start_monitoring_collection() -> None:
+    """
+    Start background monitoring metrics collection for all resources.
+    
+    This function starts a daemon thread that collects metrics every 30 seconds
+    for all provisioned resources in the database.
+    """
+    global _monitoring_thread
+    
+    try:
+        # Get database session
+        db = get_session()
+        
+        try:
+            # Get all resource IDs
+            resources = db.query(ResourceModel).all()
+            resource_ids = [resource.id for resource in resources]
+            
+            if not resource_ids:
+                logger.info("No resources found, skipping monitoring collection startup")
+                return
+            
+            logger.info(f"Starting monitoring collection for {len(resource_ids)} resources...")
+            
+            # Start the collection thread (30 second interval)
+            _monitoring_thread = collector.start_collection(
+                resource_ids=resource_ids,
+                db_session=db,
+                interval_seconds=30
+            )
+            
+            logger.info(f"Monitoring collection started successfully (30s interval)")
+            
+        finally:
+            # Note: We don't close the session here because the collector thread needs it
+            pass
+            
+    except Exception as e:
+        logger.error(f"Failed to start monitoring collection: {e}", exc_info=True)
+        # Don't fail app startup if monitoring collection fails
+        logger.warning("Continuing without monitoring collection")
 
 
 def create_app(config: dict[str, Any] | None = None) -> Flask:
@@ -46,6 +94,9 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         init_database(database_url)
         create_tables()
         logger.info("Database initialized successfully")
+        
+        # Start monitoring metrics collection
+        _start_monitoring_collection()
 
     # Register middleware
     _register_middleware(app)

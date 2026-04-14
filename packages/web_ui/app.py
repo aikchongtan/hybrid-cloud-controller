@@ -1,5 +1,7 @@
 """Flask application for Web UI."""
 
+import os
+
 from flask import Flask, redirect, request
 
 
@@ -7,8 +9,8 @@ def create_app() -> Flask:
     """Create and configure the Flask application."""
     app = Flask(__name__)
 
-    # Configure secret key for sessions (should be from environment in production)
-    app.config["SECRET_KEY"] = "dev-secret-key-change-in-production"
+    # Configure secret key for sessions - load from environment variable
+    app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
 
     # Configure session cookies
     # For local development (HTTP), set SESSION_COOKIE_SECURE to False

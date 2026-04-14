@@ -59,30 +59,30 @@ def monitoring_resource(resource_id: str):
 def monitoring_resources():
     """
     Proxy endpoint for getting list of provisioned resources.
-    
+
     GET: Forward resources request to API
     """
     token = session.get("token")
     if not token:
         return jsonify({"error": "Authentication required"}), 401
-    
+
     try:
         response = requests.get(
             f"{API_BASE_URL}/api/monitoring/resources",
             headers={"Authorization": f"Bearer {token}"},
             timeout=10,
         )
-        
+
         return jsonify(response.json()), response.status_code
-        
+
     except requests.exceptions.Timeout:
         logger.error("API request timeout during resources retrieval")
         return jsonify({"error": "Request timeout"}), 504
-    
+
     except requests.exceptions.ConnectionError:
         logger.error("API connection error during resources retrieval")
         return jsonify({"error": "Unable to connect to service"}), 503
-    
+
     except Exception as e:
         logger.error(f"Unexpected error during resources retrieval: {e}")
         return jsonify({"error": "An unexpected error occurred"}), 500
@@ -92,38 +92,38 @@ def monitoring_resources():
 def monitoring_metrics(resource_id: str):
     """
     Proxy endpoint for getting metrics for a specific resource.
-    
+
     GET: Forward metrics request to API with optional time_range parameter
     """
     token = session.get("token")
     if not token:
         return jsonify({"error": "Authentication required"}), 401
-    
+
     try:
         # Extract optional time_range query parameter
         time_range = request.args.get("time_range")
-        
+
         # Build URL with time_range parameter if provided
         url = f"{API_BASE_URL}/api/monitoring/{resource_id}/metrics"
         if time_range:
             url += f"?time_range={time_range}"
-        
+
         response = requests.get(
             url,
             headers={"Authorization": f"Bearer {token}"},
             timeout=10,
         )
-        
+
         return jsonify(response.json()), response.status_code
-        
+
     except requests.exceptions.Timeout:
         logger.error("API request timeout during metrics retrieval")
         return jsonify({"error": "Request timeout"}), 504
-    
+
     except requests.exceptions.ConnectionError:
         logger.error("API connection error during metrics retrieval")
         return jsonify({"error": "Unable to connect to service"}), 503
-    
+
     except Exception as e:
         logger.error(f"Unexpected error during metrics retrieval: {e}")
         return jsonify({"error": "An unexpected error occurred"}), 500

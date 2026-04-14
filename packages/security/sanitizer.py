@@ -65,7 +65,9 @@ def sanitize_input(input_str: str) -> str:
     return sanitized
 
 
-def validate_container_image_url(url: str, allowed_private_registries: Optional[list[str]] = None) -> ValidationResult:
+def validate_container_image_url(
+    url: str, allowed_private_registries: Optional[list[str]] = None
+) -> ValidationResult:
     """
     Validate container image URL format and allowed registry domains.
 
@@ -93,8 +95,7 @@ def validate_container_image_url(url: str, allowed_private_registries: Optional[
     # Check for dangerous characters
     if any(char in url for char in [";", "&", "|", "`", "$", "(", ")", "<", ">", "\n", "\r"]):
         return ValidationResult(
-            is_valid=False,
-            error_message="Container image URL contains invalid characters"
+            is_valid=False, error_message="Container image URL contains invalid characters"
         )
 
     # Pattern 1: Docker Hub format
@@ -131,7 +132,7 @@ def validate_container_image_url(url: str, allowed_private_registries: Optional[
         else:
             return ValidationResult(
                 is_valid=False,
-                error_message=f"Private registry '{registry_host}' is not in the allowed list"
+                error_message=f"Private registry '{registry_host}' is not in the allowed list",
             )
 
     # If no pattern matched, URL is invalid
@@ -140,5 +141,5 @@ def validate_container_image_url(url: str, allowed_private_registries: Optional[
         error_message="Container image URL format is invalid. "
         "Supported formats: Docker Hub (nginx:latest), "
         "ECR (123456789.dkr.ecr.region.amazonaws.com/repo:tag), "
-        "or allowed private registries"
+        "or allowed private registries",
     )

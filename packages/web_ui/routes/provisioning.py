@@ -42,33 +42,33 @@ def provision_page(config_id: str):
 def provision():
     """
     Proxy endpoint for starting provisioning (AWS, IaaS, or CaaS).
-    
+
     POST: Forward provisioning request to API
     """
     token = session.get("token")
     if not token:
         return jsonify({"error": "Authentication required"}), 401
-    
+
     try:
         data = request.get_json()
-        
+
         response = requests.post(
             f"{API_BASE_URL}/api/provision",
             json=data,
             headers={"Authorization": f"Bearer {token}"},
             timeout=30,
         )
-        
+
         return jsonify(response.json()), response.status_code
-        
+
     except requests.exceptions.Timeout:
         logger.error("API request timeout during provisioning")
         return jsonify({"error": "Request timeout"}), 504
-    
+
     except requests.exceptions.ConnectionError:
         logger.error("API connection error during provisioning")
         return jsonify({"error": "Unable to connect to service"}), 503
-    
+
     except Exception as e:
         logger.error(f"Unexpected error during provisioning: {e}")
         return jsonify({"error": "An unexpected error occurred"}), 500
@@ -78,30 +78,30 @@ def provision():
 def provision_status(provision_id: str):
     """
     Proxy endpoint for checking provisioning status.
-    
+
     GET: Forward status request to API
     """
     token = session.get("token")
     if not token:
         return jsonify({"error": "Authentication required"}), 401
-    
+
     try:
         response = requests.get(
             f"{API_BASE_URL}/api/provision/{provision_id}/status",
             headers={"Authorization": f"Bearer {token}"},
             timeout=10,
         )
-        
+
         return jsonify(response.json()), response.status_code
-        
+
     except requests.exceptions.Timeout:
         logger.error("API request timeout during status check")
         return jsonify({"error": "Request timeout"}), 504
-    
+
     except requests.exceptions.ConnectionError:
         logger.error("API connection error during status check")
         return jsonify({"error": "Unable to connect to service"}), 503
-    
+
     except Exception as e:
         logger.error(f"Unexpected error during status check: {e}")
         return jsonify({"error": "An unexpected error occurred"}), 500
@@ -111,30 +111,30 @@ def provision_status(provision_id: str):
 def provision_details(provision_id: str):
     """
     Proxy endpoint for getting provisioning details.
-    
+
     GET: Forward details request to API
     """
     token = session.get("token")
     if not token:
         return jsonify({"error": "Authentication required"}), 401
-    
+
     try:
         response = requests.get(
             f"{API_BASE_URL}/api/provision/{provision_id}",
             headers={"Authorization": f"Bearer {token}"},
             timeout=10,
         )
-        
+
         return jsonify(response.json()), response.status_code
-        
+
     except requests.exceptions.Timeout:
         logger.error("API request timeout during details retrieval")
         return jsonify({"error": "Request timeout"}), 504
-    
+
     except requests.exceptions.ConnectionError:
         logger.error("API connection error during details retrieval")
         return jsonify({"error": "Unable to connect to service"}), 503
-    
+
     except Exception as e:
         logger.error(f"Unexpected error during details retrieval: {e}")
         return jsonify({"error": "An unexpected error occurred"}), 500

@@ -12,7 +12,7 @@ from typing import Optional
 from uuid import uuid4
 
 import boto3
-from botocore.exceptions import ClientError, BotoCoreError
+from botocore.exceptions import BotoCoreError, ClientError
 
 from packages.database import get_session
 from packages.database.models import PricingDataModel
@@ -22,43 +22,43 @@ logger = logging.getLogger("hybrid_cloud.pricing_service")
 
 def fetch_pricing_data() -> dict[str, dict[str, Decimal]]:
     """Fetch current pricing data from AWS Pricing API.
-    
+
     Fetches pricing for EC2, EBS, S3, and data transfer services from the
     AWS Pricing API and stores it in the database with a timestamp.
-    
+
     Returns:
         Dictionary containing pricing data with keys:
         - ec2_pricing: dict mapping instance types to hourly rates
         - ebs_pricing: dict mapping volume types to GB/month rates
         - s3_pricing: dict mapping storage classes to GB/month rates
         - data_transfer_pricing: dict mapping transfer types to GB rates
-        
+
     Raises:
         ClientError: If AWS API call fails
         BotoCoreError: If boto3 client error occurs
     """
     logger.info("Fetching pricing data from AWS Pricing API")
-    
+
     try:
         # Initialize AWS Pricing API client (us-east-1 is required for pricing API)
         pricing_client = boto3.client("pricing", region_name="us-east-1")
-        
+
         # Fetch EC2 pricing
         ec2_pricing = _fetch_ec2_pricing(pricing_client)
         logger.debug(f"Fetched {len(ec2_pricing)} EC2 instance types")
-        
+
         # Fetch EBS pricing
         ebs_pricing = _fetch_ebs_pricing(pricing_client)
         logger.debug(f"Fetched {len(ebs_pricing)} EBS volume types")
-        
+
         # Fetch S3 pricing
         s3_pricing = _fetch_s3_pricing(pricing_client)
         logger.debug(f"Fetched {len(s3_pricing)} S3 storage classes")
-        
+
         # Fetch data transfer pricing
         data_transfer_pricing = _fetch_data_transfer_pricing(pricing_client)
         logger.debug(f"Fetched {len(data_transfer_pricing)} data transfer types")
-        
+
         # Store in database
         pricing_data = {
             "ec2_pricing": ec2_pricing,
@@ -66,12 +66,12 @@ def fetch_pricing_data() -> dict[str, dict[str, Decimal]]:
             "s3_pricing": s3_pricing,
             "data_transfer_pricing": data_transfer_pricing,
         }
-        
+
         _store_pricing_data(pricing_data)
         logger.info("Successfully fetched and stored pricing data")
-        
+
         return pricing_data
-        
+
     except (ClientError, BotoCoreError) as e:
         logger.error(f"Failed to fetch pricing data from AWS API: {e}")
         raise
@@ -79,10 +79,10 @@ def fetch_pricing_data() -> dict[str, dict[str, Decimal]]:
 
 def get_current_pricing() -> Optional[dict[str, dict[str, Decimal]]]:
     """Get the most recent pricing data from the database.
-    
+
     If the AWS Pricing API is unavailable, this function returns cached
     pricing data from the database.
-    
+
     Returns:
         Dictionary containing pricing data, or None if no data exists.
         Structure matches fetch_pricing_data() return value.
@@ -91,15 +91,13 @@ def get_current_pricing() -> Optional[dict[str, dict[str, Decimal]]]:
     try:
         # Query most recent pricing record
         pricing_record = (
-            session.query(PricingDataModel)
-            .order_by(PricingDataModel.fetched_at.desc())
-            .first()
+            session.query(PricingDataModel).order_by(PricingDataModel.fetched_at.desc()).first()
         )
-        
+
         if not pricing_record:
             logger.warning("No pricing data found in database")
             return None
-        
+
         # Deserialize JSON pricing data
         pricing_data = {
             "ec2_pricing": _deserialize_pricing(pricing_record.ec2_pricing_json),
@@ -109,23 +107,21 @@ def get_current_pricing() -> Optional[dict[str, dict[str, Decimal]]]:
                 pricing_record.data_transfer_pricing_json
             ),
         }
-        
+
         logger.info(f"Retrieved pricing data from {pricing_record.fetched_at}")
         return pricing_data
-        
+
     finally:
         session.close()
 
 
-def get_pricing_history(
-    start_date: datetime, end_date: datetime
-) -> list[dict[str, any]]:
+def get_pricing_history(start_date: datetime, end_date: datetime) -> list[dict[str, any]]:
     """Get historical pricing data for trend analysis.
-    
+
     Args:
         start_date: Start of date range (inclusive)
         end_date: End of date range (inclusive)
-        
+
     Returns:
         List of pricing data records with timestamps, ordered chronologically.
         Each record contains:
@@ -148,7 +144,7 @@ def get_pricing_history(
             .order_by(PricingDataModel.fetched_at.asc())
             .all()
         )
-        
+
         # Convert to list of dictionaries
         history = []
         for record in pricing_records:
@@ -164,22 +160,20 @@ def get_pricing_history(
                     ),
                 }
             )
-        
-        logger.info(
-            f"Retrieved {len(history)} pricing records from {start_date} to {end_date}"
-        )
+
+        logger.info(f"Retrieved {len(history)} pricing records from {start_date} to {end_date}")
         return history
-        
+
     finally:
         session.close()
 
 
 def _fetch_ec2_pricing(pricing_client) -> dict[str, Decimal]:
     """Fetch EC2 instance pricing.
-    
+
     Args:
         pricing_client: Boto3 pricing client
-        
+
     Returns:
         Dictionary mapping instance types to hourly rates in USD
     """
@@ -197,9 +191,9 @@ def _fetch_ec2_pricing(pricing_client) -> dict[str, Decimal]:
         "r5.large",
         "r5.xlarge",
     ]
-    
+
     ec2_pricing = {}
-    
+
     for instance_type in instance_types:
         try:
             response = pricing_client.get_products(
@@ -213,7 +207,7 @@ def _fetch_ec2_pricing(pricing_client) -> dict[str, Decimal]:
                 ],
                 MaxResults=1,
             )
-            
+
             if response["PriceList"]:
                 price_item = json.loads(response["PriceList"][0])
                 # Extract on-demand pricing
@@ -231,16 +225,16 @@ def _fetch_ec2_pricing(pricing_client) -> dict[str, Decimal]:
             logger.warning(f"Failed to fetch pricing for {instance_type}: {e}")
             # Use fallback pricing
             ec2_pricing[instance_type] = _get_fallback_ec2_price(instance_type)
-    
+
     return ec2_pricing
 
 
 def _fetch_ebs_pricing(pricing_client) -> dict[str, Decimal]:
     """Fetch EBS volume pricing.
-    
+
     Args:
         pricing_client: Boto3 pricing client
-        
+
     Returns:
         Dictionary mapping volume types to GB/month rates in USD
     """
@@ -251,9 +245,9 @@ def _fetch_ebs_pricing(pricing_client) -> dict[str, Decimal]:
         "st1": "Throughput Optimized HDD (st1)",
         "sc1": "Cold HDD (sc1)",
     }
-    
+
     ebs_pricing = {}
-    
+
     for vol_type, vol_description in volume_types.items():
         try:
             response = pricing_client.get_products(
@@ -265,7 +259,7 @@ def _fetch_ebs_pricing(pricing_client) -> dict[str, Decimal]:
                 ],
                 MaxResults=1,
             )
-            
+
             if response["PriceList"]:
                 price_item = json.loads(response["PriceList"][0])
                 terms = price_item.get("terms", {}).get("OnDemand", {})
@@ -281,16 +275,16 @@ def _fetch_ebs_pricing(pricing_client) -> dict[str, Decimal]:
         except Exception as e:
             logger.warning(f"Failed to fetch pricing for EBS {vol_type}: {e}")
             ebs_pricing[vol_type] = _get_fallback_ebs_price(vol_type)
-    
+
     return ebs_pricing
 
 
 def _fetch_s3_pricing(pricing_client) -> dict[str, Decimal]:
     """Fetch S3 storage pricing.
-    
+
     Args:
         pricing_client: Boto3 pricing client
-        
+
     Returns:
         Dictionary mapping storage classes to GB/month rates in USD
     """
@@ -301,9 +295,9 @@ def _fetch_s3_pricing(pricing_client) -> dict[str, Decimal]:
         "ONEZONE_IA": "One Zone - Infrequent Access",
         "GLACIER": "Glacier Flexible Retrieval",
     }
-    
+
     s3_pricing = {}
-    
+
     for class_key, class_name in storage_classes.items():
         try:
             response = pricing_client.get_products(
@@ -314,7 +308,7 @@ def _fetch_s3_pricing(pricing_client) -> dict[str, Decimal]:
                 ],
                 MaxResults=1,
             )
-            
+
             if response["PriceList"]:
                 price_item = json.loads(response["PriceList"][0])
                 terms = price_item.get("terms", {}).get("OnDemand", {})
@@ -330,16 +324,16 @@ def _fetch_s3_pricing(pricing_client) -> dict[str, Decimal]:
         except Exception as e:
             logger.warning(f"Failed to fetch pricing for S3 {class_key}: {e}")
             s3_pricing[class_key] = _get_fallback_s3_price(class_key)
-    
+
     return s3_pricing
 
 
 def _fetch_data_transfer_pricing(pricing_client) -> dict[str, Decimal]:
     """Fetch data transfer pricing.
-    
+
     Args:
         pricing_client: Boto3 pricing client
-        
+
     Returns:
         Dictionary mapping transfer types to GB rates in USD
     """
@@ -350,7 +344,7 @@ def _fetch_data_transfer_pricing(pricing_client) -> dict[str, Decimal]:
         "inter_az": Decimal("0.01"),  # Per GB between AZs
         "inbound": Decimal("0.00"),  # Inbound is free
     }
-    
+
     logger.debug("Using fallback data transfer pricing")
     return data_transfer_pricing
 
@@ -399,7 +393,7 @@ def _get_fallback_s3_price(storage_class: str) -> Decimal:
 
 def _store_pricing_data(pricing_data: dict[str, dict[str, Decimal]]) -> None:
     """Store pricing data in the database.
-    
+
     Args:
         pricing_data: Dictionary containing ec2_pricing, ebs_pricing,
                      s3_pricing, and data_transfer_pricing
@@ -411,16 +405,14 @@ def _store_pricing_data(pricing_data: dict[str, dict[str, Decimal]]) -> None:
             ec2_pricing_json=_serialize_pricing(pricing_data["ec2_pricing"]),
             ebs_pricing_json=_serialize_pricing(pricing_data["ebs_pricing"]),
             s3_pricing_json=_serialize_pricing(pricing_data["s3_pricing"]),
-            data_transfer_pricing_json=_serialize_pricing(
-                pricing_data["data_transfer_pricing"]
-            ),
+            data_transfer_pricing_json=_serialize_pricing(pricing_data["data_transfer_pricing"]),
             fetched_at=datetime.utcnow(),
         )
-        
+
         session.add(pricing_record)
         session.commit()
         logger.info(f"Stored pricing data with ID {pricing_record.id}")
-        
+
     except Exception as e:
         session.rollback()
         logger.error(f"Failed to store pricing data: {e}")
@@ -431,10 +423,10 @@ def _store_pricing_data(pricing_data: dict[str, dict[str, Decimal]]) -> None:
 
 def _serialize_pricing(pricing_dict: dict[str, Decimal]) -> str:
     """Serialize pricing dictionary to JSON string.
-    
+
     Args:
         pricing_dict: Dictionary with Decimal values
-        
+
     Returns:
         JSON string representation
     """
@@ -445,10 +437,10 @@ def _serialize_pricing(pricing_dict: dict[str, Decimal]) -> str:
 
 def _deserialize_pricing(pricing_json: str) -> dict[str, Decimal]:
     """Deserialize pricing JSON string to dictionary.
-    
+
     Args:
         pricing_json: JSON string representation
-        
+
     Returns:
         Dictionary with Decimal values
     """

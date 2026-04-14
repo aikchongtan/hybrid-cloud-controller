@@ -86,7 +86,5 @@ def clear_history(db_session: Session, session_id: str) -> None:
         db_session: Database session
         session_id: The session identifier for the conversation
     """
-    db_session.query(ConversationModel).filter(
-        ConversationModel.session_id == session_id
-    ).delete()
+    db_session.query(ConversationModel).filter(ConversationModel.session_id == session_id).delete()
     db_session.commit()

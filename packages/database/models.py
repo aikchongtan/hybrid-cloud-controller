@@ -1,17 +1,17 @@
 """SQLAlchemy models for Hybrid Cloud Controller database schema."""
 
 from sqlalchemy import (
-    Column,
-    String,
-    Integer,
-    Float,
-    DateTime,
     Boolean,
+    Column,
+    DateTime,
+    Float,
     ForeignKey,
-    Text,
+    Integer,
     LargeBinary,
+    String,
+    Text,
 )
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -127,9 +127,7 @@ class ProvisionModel(Base):
     # Relationships
     configuration = relationship("ConfigurationModel", back_populates="provisions")
     resources = relationship("ResourceModel", back_populates="provision")
-    terraform_state = relationship(
-        "TerraformStateModel", back_populates="provision", uselist=False
-    )
+    terraform_state = relationship("TerraformStateModel", back_populates="provision", uselist=False)
 
 
 class ResourceModel(Base):

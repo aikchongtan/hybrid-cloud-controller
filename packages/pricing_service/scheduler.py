@@ -118,9 +118,7 @@ async def execute_fetch() -> dict[str, any]:
             }
 
         except Exception as e:
-            logger.warning(
-                f"Pricing fetch failed (attempt {attempt + 1}/{max_retries + 1}): {e}"
-            )
+            logger.warning(f"Pricing fetch failed (attempt {attempt + 1}/{max_retries + 1}): {e}")
 
             # If this was the last attempt, use cached data
             if attempt >= max_retries:

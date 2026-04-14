@@ -81,13 +81,8 @@ def validate_configuration(
             errors["bandwidth_mbps"] = "Bandwidth must be a positive integer"
 
     if monthly_data_transfer_gb is not None:
-        if (
-            not isinstance(monthly_data_transfer_gb, int)
-            or monthly_data_transfer_gb <= 0
-        ):
-            errors["monthly_data_transfer_gb"] = (
-                "Data transfer must be a positive integer"
-            )
+        if not isinstance(monthly_data_transfer_gb, int) or monthly_data_transfer_gb <= 0:
+            errors["monthly_data_transfer_gb"] = "Data transfer must be a positive integer"
 
     # Validate workload profile
     if utilization_percentage is not None:
@@ -96,9 +91,7 @@ def validate_configuration(
             or utilization_percentage < 0
             or utilization_percentage > 100
         ):
-            errors["utilization_percentage"] = (
-                "Utilization percentage must be between 0 and 100"
-            )
+            errors["utilization_percentage"] = "Utilization percentage must be between 0 and 100"
 
     if operating_hours_per_month is not None:
         if (
@@ -106,9 +99,7 @@ def validate_configuration(
             or operating_hours_per_month < 0
             or operating_hours_per_month > 744
         ):
-            errors["operating_hours_per_month"] = (
-                "Operating hours must be between 0 and 744"
-            )
+            errors["operating_hours_per_month"] = "Operating hours must be between 0 and 744"
 
     if errors:
         raise ValidationError(errors)

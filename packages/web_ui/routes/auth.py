@@ -13,6 +13,7 @@ bp = Blueprint("auth", __name__)
 # API base URL (should be from environment in production)
 # Use 'api' hostname for Docker, 'localhost' for local development
 import os
+
 API_BASE_URL = os.getenv("API_BASE_URL", "http://api:10000")
 
 

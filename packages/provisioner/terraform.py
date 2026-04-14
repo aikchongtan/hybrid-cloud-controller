@@ -46,9 +46,7 @@ class TerraformResult:
     state_file: Optional[str] = None
 
 
-def generate_terraform(
-    config: models.ConfigurationModel, cloud_path: CloudPath
-) -> TerraformFiles:
+def generate_terraform(config: models.ConfigurationModel, cloud_path: CloudPath) -> TerraformFiles:
     """Generate Terraform configuration files for the specified cloud path.
 
     Args:
@@ -524,9 +522,7 @@ async def destroy_terraform(
     """
     # Retrieve Terraform state from database
     terraform_state = (
-        db_session.query(models.TerraformStateModel)
-        .filter_by(provision_id=provision_id)
-        .first()
+        db_session.query(models.TerraformStateModel).filter_by(provision_id=provision_id).first()
     )
 
     if not terraform_state:

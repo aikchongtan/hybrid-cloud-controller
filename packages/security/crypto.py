@@ -3,9 +3,9 @@
 import os
 from dataclasses import dataclass
 
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 
 @dataclass
@@ -36,9 +36,7 @@ def get_encryption_key() -> bytes:
     try:
         key = bytes.fromhex(key_hex)
     except ValueError as e:
-        raise ValueError(
-            f"ENCRYPTION_KEY must be a valid hex string: {e}"
-        ) from e
+        raise ValueError(f"ENCRYPTION_KEY must be a valid hex string: {e}") from e
 
     if len(key) != 32:
         raise ValueError(
@@ -104,13 +102,9 @@ def decrypt_credential(encrypted_data: EncryptedData) -> str:
     key = get_encryption_key()
 
     # Decrypt using AES-256-CBC
-    cipher = Cipher(
-        algorithms.AES(key), modes.CBC(encrypted_data.iv), backend=default_backend()
-    )
+    cipher = Cipher(algorithms.AES(key), modes.CBC(encrypted_data.iv), backend=default_backend())
     decryptor = cipher.decryptor()
-    padded_plaintext = (
-        decryptor.update(encrypted_data.encrypted_value) + decryptor.finalize()
-    )
+    padded_plaintext = decryptor.update(encrypted_data.encrypted_value) + decryptor.finalize()
 
     # Unpad plaintext
     unpadder = padding.PKCS7(128).unpadder()

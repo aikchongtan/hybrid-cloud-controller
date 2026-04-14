@@ -4,16 +4,16 @@ This package provides conversational Q&A processing to help users understand
 their TCO analysis results, compare costs, and get recommendations.
 """
 
-from packages.qa_service.processor import (
-    process_question,
-    get_cost_item_explanation,
-    compare_aspects,
-    generate_recommendation,
-)
 from packages.qa_service.context import (
     add_message,
-    get_history,
     clear_history,
+    get_history,
+)
+from packages.qa_service.processor import (
+    compare_aspects,
+    generate_recommendation,
+    get_cost_item_explanation,
+    process_question,
 )
 
 __all__ = [

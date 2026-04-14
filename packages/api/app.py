@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any
+from typing import Any, Optional
 
 from flask import Flask, request
 from werkzeug.exceptions import HTTPException
@@ -48,7 +48,7 @@ def _start_monitoring_collection() -> None:
                 resource_ids=resource_ids, db_session=db, interval_seconds=30
             )
 
-            logger.info(f"Monitoring collection started successfully (30s interval)")
+            logger.info("Monitoring collection started successfully (30s interval)")
 
         finally:
             # Note: We don't close the session here because the collector thread needs it

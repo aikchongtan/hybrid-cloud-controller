@@ -64,6 +64,42 @@ body {
     }
 }
 
+/* Equal-height card columns */
+.columns.equal-height {
+    display: flex;
+}
+
+.columns.equal-height .column {
+    display: flex;
+}
+
+.columns.equal-height .card {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+.columns.equal-height .card-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.columns.equal-height .card-content .media {
+    flex-shrink: 0;
+}
+
+.columns.equal-height .card-content .content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.columns.equal-height .card-content .content > div:last-child {
+    margin-top: auto;
+}
+
 /* Loading spinner */
 .loader {
     border: 4px solid #f3f3f3;

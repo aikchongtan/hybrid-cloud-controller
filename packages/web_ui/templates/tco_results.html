@@ -8,6 +8,9 @@
         border-radius: 8px;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         transition: transform 0.2s;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
     }
     
     .comparison-card:hover {
@@ -39,6 +42,7 @@
     .cost-breakdown {
         padding: 1.5rem;
         background-color: #ffffff;
+        flex: 1;
     }
     
     .breakdown-item {
@@ -176,7 +180,7 @@
 
 <!-- 1-Year Projection -->
 <div id="1-year-content" class="tab-content">
-    <div class="columns">
+    <div class="columns equal-height">
         <div class="column">
             <div class="comparison-card">
                 <div class="cost-header on-prem-header">
@@ -229,7 +233,7 @@
 
 <!-- 3-Year Projection -->
 <div id="3-year-content" class="tab-content" style="display: none;">
-    <div class="columns">
+    <div class="columns equal-height">
         <div class="column">
             <div class="comparison-card">
                 <div class="cost-header on-prem-header">
@@ -282,7 +286,7 @@
 
 <!-- 5-Year Projection -->
 <div id="5-year-content" class="tab-content" style="display: none;">
-    <div class="columns">
+    <div class="columns equal-height">
         <div class="column">
             <div class="comparison-card">
                 <div class="cost-header on-prem-header">

@@ -3,6 +3,7 @@
 import json
 import logging
 from datetime import datetime
+from typing import Optional
 
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy.exc import SQLAlchemyError
@@ -370,7 +371,7 @@ def _deserialize_costs(costs_json: str) -> dict[int, processor.CostBreakdown]:
     return result
 
 
-def _error_response(error_code: str, message: str, details: dict | None = None) -> dict:
+def _error_response(error_code: str, message: str, details: Optional[dict] = None) -> dict:
     """
     Create a consistent error response.
 

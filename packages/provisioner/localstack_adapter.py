@@ -11,6 +11,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import Optional
 
 import boto3
 from sqlalchemy.orm import Session
@@ -35,8 +36,8 @@ class EC2Instance:
     instance_id: str
     instance_type: str
     state: str
-    public_ip: str | None = None
-    private_ip: str | None = None
+    public_ip: Optional[str] = None
+    private_ip: Optional[str] = None
 
 
 @dataclass
@@ -47,7 +48,7 @@ class EBSVolume:
     size_gb: int
     volume_type: str
     state: str
-    iops: int | None = None
+    iops: Optional[int] = None
 
 
 @dataclass
@@ -67,7 +68,7 @@ class ECSDeployment:
     cluster_arn: str
     service_arn: str
     task_definition_arn: str
-    endpoint: str | None = None
+    endpoint: Optional[str] = None
 
 
 @dataclass
@@ -78,7 +79,7 @@ class ResourceState:
     resource_type: str
     external_id: str
     status: str
-    details: dict[str, str] | None = None
+    details: Optional[dict[str, str]] = None
 
 
 @dataclass
@@ -96,7 +97,7 @@ class StorageSpec:
 
     storage_type: str
     capacity_gb: int
-    iops: int | None = None
+    iops: Optional[int] = None
 
 
 @dataclass
@@ -107,7 +108,7 @@ class NetworkSpec:
     monthly_data_transfer_gb: int
 
 
-def _get_boto3_client(service_name: str, endpoint_url: str | None = None):
+def _get_boto3_client(service_name: str, endpoint_url: Optional[str] = None):
     """Create boto3 client configured for LocalStack.
 
     Args:
@@ -119,7 +120,7 @@ def _get_boto3_client(service_name: str, endpoint_url: str | None = None):
     """
     if endpoint_url is None:
         endpoint_url = os.getenv("LOCALSTACK_ENDPOINT", "http://localhost:4566")
-    
+
     return boto3.client(
         service_name,
         endpoint_url=endpoint_url,

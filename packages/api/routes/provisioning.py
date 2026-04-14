@@ -4,6 +4,7 @@ import json
 import logging
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy.exc import SQLAlchemyError
@@ -778,7 +779,7 @@ def _provision_onprem_caas(
     return resources
 
 
-def _error_response(error_code: str, message: str, details: dict | None = None) -> dict:
+def _error_response(error_code: str, message: str, details: Optional[dict] = None) -> dict:
     """
     Create a consistent error response.
 

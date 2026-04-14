@@ -3,13 +3,15 @@
 import logging
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy.exc import SQLAlchemyError
 
 from packages.database import get_session
 from packages.database.models import ConfigurationModel
-from packages.tco_engine.validation import ValidationError, validate_configuration
+from packages.tco_engine import validation
+from packages.tco_engine.validation import ValidationError
 
 logger = logging.getLogger("hybrid_cloud.api.routes.configurations")
 
@@ -99,7 +101,7 @@ def create_configuration():
 
         # Validate configuration
         try:
-            validate_configuration(
+            validation.validate_configuration(
                 cpu_cores=cpu_cores,
                 memory_gb=memory_gb,
                 instance_count=instance_count,
@@ -363,7 +365,7 @@ def validate_configuration_endpoint():
 
         # Validate configuration
         try:
-            validate_configuration(
+            validation.validate_configuration(
                 cpu_cores=cpu_cores,
                 memory_gb=memory_gb,
                 instance_count=instance_count,
@@ -400,7 +402,7 @@ def validate_configuration_endpoint():
         return _error_response("DATABASE_ERROR", "An unexpected error occurred"), 500
 
 
-def _error_response(error_code: str, message: str, details: dict | None = None) -> dict:
+def _error_response(error_code: str, message: str, details: Optional[dict] = None) -> dict:
     """
     Create a consistent error response.
 

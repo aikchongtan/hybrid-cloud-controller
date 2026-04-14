@@ -1,6 +1,7 @@
 """Authentication middleware for API request validation."""
 
 import logging
+from typing import Optional
 
 from flask import g, request
 from werkzeug.exceptions import Unauthorized
@@ -83,7 +84,7 @@ def _is_public_endpoint(path: str) -> bool:
     return any(path == prefix for prefix in PUBLIC_PREFIXES)
 
 
-def _validate_session_token(token: str) -> dict[str, str] | None:
+def _validate_session_token(token: str) -> Optional[dict[str, str]]:
     """
     Validate session token and check timeout.
 

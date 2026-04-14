@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from typing import Optional
 
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy.exc import SQLAlchemyError
@@ -164,9 +165,7 @@ def get_metrics(resource_id: str):
                         "data_points": historical_metrics.data_points,
                     }
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to retrieve historical metrics for {resource_id}: {e}"
-                    )
+                    logger.warning(f"Failed to retrieve historical metrics for {resource_id}: {e}")
 
             # Get alerts
             alerts_data = []
@@ -344,7 +343,7 @@ def get_all_resources_status():
         return _error_response("DATABASE_ERROR", "An unexpected error occurred"), 500
 
 
-def _error_response(error_code: str, message: str, details: dict | None = None) -> dict:
+def _error_response(error_code: str, message: str, details: Optional[dict] = None) -> dict:
     """
     Create a consistent error response.
 

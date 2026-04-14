@@ -1,7 +1,7 @@
 """Error handling middleware for consistent API error responses."""
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from werkzeug.exceptions import HTTPException
 
@@ -125,7 +125,7 @@ def _serialize_error_response(error_response: ErrorResponse) -> dict[str, Any]:
 
 
 def create_error_response(
-    error_code: str, message: str, details: dict[str, Any] | None = None
+    error_code: str, message: str, details: Optional[dict[str, Any]] = None
 ) -> tuple[dict[str, Any], int]:
     """
     Create a standardized error response.

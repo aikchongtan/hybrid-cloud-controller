@@ -100,59 +100,6 @@ def calculate_tco(
     }
 
 
-def project_costs(
-    base_breakdown: CostBreakdown,
-    years: list[int],
-) -> dict[int, CostBreakdown]:
-    """
-    Project costs for multiple time periods.
-
-    This function takes a base cost breakdown and projects it for different
-    time periods. It ensures that 3-year >= 1-year and 5-year >= 3-year for
-    recurring costs.
-
-    Args:
-        base_breakdown: Base cost breakdown (typically for 1 year)
-        years: List of years to project for (e.g., [1, 3, 5])
-
-    Returns:
-        Dictionary mapping years to projected CostBreakdown objects
-    """
-    projections = {}
-
-    for year_count in years:
-        projected_items = []
-        total = Decimal(0)
-
-        for item in base_breakdown.items:
-            # Scale recurring costs by year count
-            # One-time costs (like hardware) don't scale
-            if "hardware" in item.category.lower():
-                # Hardware is a one-time cost
-                projected_amount = item.amount
-            else:
-                # Recurring costs scale with years
-                projected_amount = item.amount * year_count
-
-            projected_items.append(
-                CostLineItem(
-                    category=item.category,
-                    description=item.description,
-                    amount=projected_amount,
-                    unit=item.unit,
-                )
-            )
-            total += projected_amount
-
-        projections[year_count] = CostBreakdown(
-            items=projected_items,
-            total=total,
-            currency=base_breakdown.currency,
-        )
-
-    return projections
-
-
 def _calculate_on_prem_breakdown(config: Configuration, years: int) -> CostBreakdown:
     """
     Calculate on-premises cost breakdown with itemized line items.
@@ -270,7 +217,6 @@ def _calculate_aws_breakdown(
         cpu_cores=config.cpu_cores,
         memory_gb=config.memory_gb,
         instance_count=config.instance_count,
-        utilization_percentage=config.utilization_percentage,
         operating_hours_per_month=config.operating_hours_per_month,
         ec2_pricing=pricing.ec2_pricing,
         years=years,

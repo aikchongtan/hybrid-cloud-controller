@@ -8,7 +8,6 @@ def calculate_ec2_costs(
     cpu_cores: int,
     memory_gb: int,
     instance_count: int,
-    utilization_percentage: int,
     operating_hours_per_month: int,
     ec2_pricing: dict[str, Decimal],
     years: int,
@@ -17,13 +16,12 @@ def calculate_ec2_costs(
     Calculate EC2 instance costs using pricing data.
 
     Selects appropriate instance type based on CPU and memory requirements,
-    then calculates costs based on operating hours and utilization.
+    then calculates costs based on operating hours.
 
     Args:
         cpu_cores: Number of CPU cores per instance
         memory_gb: Memory size in GB per instance
         instance_count: Number of instances
-        utilization_percentage: CPU utilization percentage (0-100)
         operating_hours_per_month: Operating hours per month
         ec2_pricing: Dictionary mapping instance types to hourly rates
         years: Number of years to calculate for

@@ -10,7 +10,6 @@ from packages.tco_engine.calculator import (
     CostBreakdown,
     CostLineItem,
     calculate_tco,
-    project_costs,
 )
 
 
@@ -182,75 +181,6 @@ def test_multi_year_costs_scale_appropriately(sample_config, sample_pricing):
 
     assert aws_3yr >= aws_1yr
     assert aws_5yr >= aws_3yr
-
-
-def test_project_costs_scales_recurring_costs():
-    """Test that project_costs scales recurring costs by year count."""
-    base_items = [
-        CostLineItem(
-            category="Power",
-            description="Electricity",
-            amount=Decimal("1000"),
-            unit="USD",
-        ),
-        CostLineItem(
-            category="Cooling",
-            description="HVAC",
-            amount=Decimal("400"),
-            unit="USD",
-        ),
-    ]
-    base_breakdown = CostBreakdown(
-        items=base_items,
-        total=Decimal("1400"),
-        currency="USD",
-    )
-
-    projections = project_costs(base_breakdown, [1, 3, 5])
-
-    # 1 year should match base
-    assert projections[1].total == Decimal("1400")
-
-    # 3 years should be 3x
-    assert projections[3].total == Decimal("4200")
-
-    # 5 years should be 5x
-    assert projections[5].total == Decimal("7000")
-
-
-def test_project_costs_does_not_scale_hardware():
-    """Test that project_costs does not scale hardware costs (one-time)."""
-    base_items = [
-        CostLineItem(
-            category="Hardware",
-            description="Server hardware",
-            amount=Decimal("10000"),
-            unit="USD",
-        ),
-        CostLineItem(
-            category="Power",
-            description="Electricity",
-            amount=Decimal("1000"),
-            unit="USD",
-        ),
-    ]
-    base_breakdown = CostBreakdown(
-        items=base_items,
-        total=Decimal("11000"),
-        currency="USD",
-    )
-
-    projections = project_costs(base_breakdown, [1, 3, 5])
-
-    # Hardware should stay the same, power should scale
-    # 1 year: 10000 + 1000 = 11000
-    assert projections[1].total == Decimal("11000")
-
-    # 3 years: 10000 + (1000 * 3) = 13000
-    assert projections[3].total == Decimal("13000")
-
-    # 5 years: 10000 + (1000 * 5) = 15000
-    assert projections[5].total == Decimal("15000")
 
 
 def test_cost_line_items_have_required_fields():

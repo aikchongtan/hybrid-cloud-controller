@@ -1,6 +1,36 @@
 # Hybrid Cloud Controller
 
-A Python-based application that enables users to compare Total Cost of Ownership (TCO) between hosting applications on on-premises infrastructure versus AWS public cloud.
+A cloud cost and infrastructure decision-support platform for evaluating whether workloads are better suited to on-premises infrastructure or AWS.
+
+The application helps technical and business teams compare Total Cost of Ownership (TCO), understand the cost drivers behind each hosting option, and explore infrastructure choices before committing to deployment.
+
+It combines cloud pricing, infrastructure provisioning, monitoring, and conversational cost analysis in a single workflow.
+
+## Business Value
+
+Hybrid infrastructure decisions are often difficult because cost, architecture, and operational trade-offs are evaluated separately.
+
+Hybrid Cloud Controller brings these factors together by helping users:
+
+- Compare projected on-premises and AWS infrastructure costs
+- Identify the key compute, storage, network, and workload drivers behind TCO
+- Explore cost implications before infrastructure is provisioned
+- Use conversational Q&A to investigate cost and configuration choices
+- Provision infrastructure through Terraform after a deployment path is selected
+- Monitor operational metrics after deployment
+- Evaluate cloud options in a repeatable, structured workflow
+
+## Key Capabilities
+
+- **TCO comparison engine** for on-premises infrastructure versus AWS
+- **AWS pricing integration** with regularly refreshed pricing data
+- **Conversational cost analysis** for exploring TCO results and infrastructure choices
+- **Terraform-based provisioning** for AWS and on-premises environments
+- **Operational monitoring dashboard**
+- **REST API and web interface**
+- **PostgreSQL persistence**
+- **Docker Compose development environment with LocalStack**
+- **Authentication and encrypted credential handling**
 
 ## Features
 
